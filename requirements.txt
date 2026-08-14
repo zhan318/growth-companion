@@ -24,9 +24,16 @@ pypdf>=5.0,<6.0
 # Env
 python-dotenv>=1.0,<2.0
 
+# Security
+bcrypt>=4.0,<5.0
+PyJWT>=2.0,<3.0
+
 # Obsidian 实时文件监视（可选）：启用 vault 毫秒级实时重索引；
 # 不安装则自动回退 5s 轮询，功能不受影响
 watchdog>=4.0,<5.0
+
+# MCP（Model Context Protocol）客户端：连接外部工具服务器（filesystem 等）
+mcp>=2.0,<3.0
 
 # Test
 pytest>=8.0,<9.0

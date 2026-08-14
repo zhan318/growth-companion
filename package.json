@@ -1,8 +1,11 @@
 {
-  "name": "ai-workspace",
+  "name": "smart-personal-assistant",
   "private": true,
   "scripts": {
     "build": "cd frontend && npm install && npm run build",
     "dev": "cd frontend && npm run dev"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "2026.7.10"
   }
 }

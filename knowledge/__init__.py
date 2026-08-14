@@ -5,8 +5,8 @@
 不依赖 Agent，可独立使用。
 """
 
-from .pipeline import query, index_documents
 from .config import KnowledgeConfig
+from .pipeline import index_documents, query
 from .vector_store import get_vector_store
 
 __all__ = [

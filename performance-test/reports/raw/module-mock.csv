@@ -1,0 +1,8 @@
+module,endpoint,method,path,count,ok,fail,p50,p95,p99,avg,min,max
+MBTI,GET /mbti/questions,GET,/mbti/questions,8,8,0,25.3,129.3,129.3,47.4,6.4,129.3
+MBTI,POST /mbti/analyze,POST,/mbti/analyze,8,8,0,913.7,1211.6,1211.6,949.7,840.4,1211.6
+MBTI,GET /mbti/history,GET,/mbti/history,8,8,0,16.8,111.5,111.5,28.7,6.4,111.5
+MBTI,POST /mbti/export,POST,/mbti/export,8,8,0,12.5,109.9,109.9,27.7,10.5,109.9
+看板,GET /dashboard/stats,GET,/dashboard/stats,8,8,0,13.7,36.3,36.3,17.5,10.8,36.3
+面试,POST /interview/save,POST,/interview/save,8,8,0,863.7,1170.1,1170.1,924.7,830.6,1170.1
+面试,POST /interview/finish,POST,/interview/finish,8,8,0,1710.1,1746.0,1746.0,1698.5,1639.1,1746.0

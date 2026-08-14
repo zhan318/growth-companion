@@ -1,4 +1,4 @@
-# 🧠 Knowledge-Agent · Python + DeepSeek + React
+# 🧠 智能个人助手 · Python + DeepSeek + React
 
 > 一个基于 **DeepSeek API**（兼容多种 OpenAI 格式模型）和 **FastAPI** 的知识库智能 Agent。具备用户认证、长期记忆、多会话隔离、RAG 知识库检索、自主工具调用（Function Calling）、流式输出，并附带 **React 聊天界面**。
 
@@ -31,7 +31,7 @@
 ## 🗂️ 项目结构
 
 ```
-AI-Workspace/
+智能个人助手/
 ├── api.py                      # FastAPI 服务入口（聊天 / 认证 / 知识库 / 用户接口）
 ├── app.py                      # 终端交互入口（CLI）
 ├── config.py                   # 全局配置：环境变量加载 + LLM 提供商配置
@@ -269,8 +269,8 @@ def get_news(topic: str) -> str:
 ## 🐳 Docker 部署
 
 ```bash
-docker build -t ai-agent .
-docker run -p 8000:8000 ai-agent
+docker build -t smart-personal-assistant .
+docker run -p 8000:8000 smart-personal-assistant
 ```
 
 也可参考项目根目录的 `render.yaml`（Render）与 `vercel.json`（Vercel）做平台部署。

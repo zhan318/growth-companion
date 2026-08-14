@@ -1,0 +1,12 @@
+﻿=== chat_history.db ===
+Attributes: Archive
+BUILTIN\Administrators | FullControl | Allow
+NT AUTHORITY\SYSTEM | FullControl | Allow
+NT AUTHORITY\Authenticated Users | Modify, Synchronize | Allow
+BUILTIN\Users | ReadAndExecute, Synchronize | Allow
+=== _fresh_test.db ===
+Attributes: Archive
+BUILTIN\Administrators | FullControl | Allow
+NT AUTHORITY\SYSTEM | FullControl | Allow
+NT AUTHORITY\Authenticated Users | Modify, Synchronize | Allow
+BUILTIN\Users | ReadAndExecute, Synchronize | Allow

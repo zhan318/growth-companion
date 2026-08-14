@@ -1,0 +1,12 @@
+{
+  "optimization": "P2 方案A：WAL + busy_timeout + 统一连接工厂",
+  "date": "2026-08-14",
+  "changes": [
+    "memory/memory.py: 新增 _connect() 统一连接工厂（PRAGMA journal_mode=WAL / busy_timeout=5000 / synchronous=NORMAL / foreign_keys=ON）",
+    "memory/memory.py: 全部 27 处 sqlite3.connect(self.db_path) 替换为 self._connect()",
+    "api.py: /health 连接改用 memory._connect()"
+  ],
+  "comparison_30u": {"sync": 43.5, "async_only": 43.8, "async+wal": 37.7, "improve_vs_async": "14%"},
+  "comparison_50u_requests": {"sync": 0, "async_only": 1, "async+wal": 7},
+  "conclusion": "WAL 改善 30 并发约 14%，50 并发请求数 0→7。剩余瓶颈：Chroma 向量库写锁（add_turn 每对话一次）+ mock LLM 单进程吞吐。方案B（批量写入+向量记忆节流）为下一步。"
+}

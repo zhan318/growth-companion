@@ -1,6 +1,7 @@
 """全局配置：环境变量加载 + LLM 提供商配置"""
 
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,6 +38,12 @@ QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-turbo")
 YI_API_KEY = os.getenv("YI_API_KEY", "")
 YI_BASE_URL = os.getenv("YI_BASE_URL", "https://api.lingyiwanwu.com/v1")
 YI_MODEL = os.getenv("YI_MODEL", "yi-lightning")
+
+# ========== GitHub OAuth2.0 ==========
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+# 回调地址（本地开发默认 http://127.0.0.1:8000/auth/github/callback）
+GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "http://127.0.0.1:8000/auth/github/callback")
 
 # ========== Obsidian 知识库（用户个人笔记，独立 collection）==========
 # vault 本地文件夹路径（含 .obsidian 目录即为有效 vault）

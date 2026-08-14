@@ -1,12 +1,12 @@
 """文本切片 —— 基于 LangChain Text Splitter"""
 
-from typing import List
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from utils.logger import get_logger
 
 from .config import config
-from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -25,13 +25,13 @@ class Chunker:
             length_function=len,
         )
 
-    def split_documents(self, documents: List[Document]) -> List[Document]:
+    def split_documents(self, documents: list[Document]) -> list[Document]:
         """对 Document 列表执行切片"""
         chunks = self._splitter.split_documents(documents)
         logger.info("切片完成: %d → %d 个片段", len(documents), len(chunks))
         return chunks
 
-    def split_text(self, text: str) -> List[str]:
+    def split_text(self, text: str) -> list[str]:
         """对纯文本执行切片"""
         return self._splitter.split_text(text)
 

@@ -1,0 +1,4 @@
+﻿16148 | E:\pythonprojects\AI-Workspace\.venv\Scripts\python.exe -m uvicorn mock.mock_llm:app --host 127.0.0.1 --port 18001 --log-level warning
+1432 | "E:\anaconda\python.exe" -m uvicorn mock.mock_llm:app --host 127.0.0.1 --port 18001 --log-level warning
+4192 | E:\pythonprojects\AI-Workspace\.venv\Scripts\python.exe -m uvicorn mock.mock_external:app --host 127.0.0.1 --port 18002 --log-level warning
+19060 | "E:\anaconda\python.exe" -m uvicorn mock.mock_external:app --host 127.0.0.1 --port 18002 --log-level warning

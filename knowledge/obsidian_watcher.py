@@ -14,16 +14,16 @@
 """
 
 import os
-import time
 import threading
+import time
+from contextlib import suppress
 from pathlib import Path
 
-from .config import config
 from config import (
-    OBSIDIAN_VAULT_DIR,
     OBSIDIAN_EXCLUDE,
-    OBSIDIAN_WATCHER_ENABLED,
+    OBSIDIAN_VAULT_DIR,
     OBSIDIAN_WATCH_INTERVAL,
+    OBSIDIAN_WATCHER_ENABLED,
 )
 from utils.logger import get_logger
 
@@ -96,10 +96,8 @@ def _scan_mtimes(vault: str) -> dict:
             p = Path(root) / fn
             if not _is_relevant(str(p)):
                 continue
-            try:
+            with suppress(OSError):
                 result[str(p.resolve())] = p.stat().st_mtime
-            except OSError:
-                pass
     return result
 
 
@@ -121,8 +119,8 @@ def start_obsidian_watcher():
 
     # ── 优先 watchdog（OS 级事件，真正实时）──
     try:
-        from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
 
         class _Handler(FileSystemEventHandler):
             def on_modified(self, event):

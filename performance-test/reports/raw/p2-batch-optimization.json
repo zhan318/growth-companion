@@ -1,0 +1,16 @@
+{
+  "optimization": "P2 方案B：批量写入 + 向量记忆 fire-and-forget",
+  "date": "2026-08-14",
+  "changes": [
+    "memory/memory.py: 新增 save_messages_batch()（单事务 executemany）",
+    "agent/agent.py: add_*_message 改为攒批队列 _pending_db_writes，run/arun/run_stream/arun_stream 用 try/finally 包裹统一 flush_messages()",
+    "agent/agent.py: arun/arun_stream 的 vector_memory.add_turn 改 fire-and-forget（create_task，不阻塞响应）"
+  ],
+  "comparison_30u": {"sync": 43.5, "async_only": 43.8, "async+wal": 37.7, "async+wal+batch": 34.1, "improve_vs_wal": "10%"},
+  "notes": [
+    "单请求 2.8s → 1.9s（批量写入生效）",
+    "50 并发下 mock external 单进程被打爆（工具超时）→ 测试环境瓶颈，非项目问题；mock 加 workers 后验证",
+    "30+ 并发剩余瓶颈：Agent 池无上限（压测随机 session 放大）+ 内存爬升（500MB）→ P1 待做",
+    "真实用户会话复用 session，Agent 池增长慢，问题被测试流量模式放大"
+  ]
+}

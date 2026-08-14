@@ -1,10 +1,10 @@
 """文档加载器 —— 基于 LangChain Loader"""
 
 from pathlib import Path
-from typing import List
 
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_core.documents import Document
-from langchain_community.document_loaders import TextLoader, PyPDFLoader
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -16,7 +16,7 @@ class MarkdownLoader:
     def __init__(self, file_path: str):
         self.file_path = file_path
 
-    def load(self) -> List[Document]:
+    def load(self) -> list[Document]:
         path = Path(self.file_path)
         content = path.read_text(encoding="utf-8", errors="ignore")
         return [Document(
@@ -33,7 +33,7 @@ _LOADER_MAP = {
 }
 
 
-def load_document(file_path: str) -> List[Document]:
+def load_document(file_path: str) -> list[Document]:
     """加载单个文件，自动识别格式"""
     suffix = Path(file_path).suffix.lower()
     loader_cls = _LOADER_MAP.get(suffix)
@@ -46,9 +46,9 @@ def load_document(file_path: str) -> List[Document]:
     return docs
 
 
-def load_directory(doc_dir: str) -> List[Document]:
+def load_directory(doc_dir: str) -> list[Document]:
     """递归加载目录下所有支持的文档"""
-    all_docs: List[Document] = []
+    all_docs: list[Document] = []
     base = Path(doc_dir)
     if not base.exists():
         logger.warning("目录不存在: %s", doc_dir)
@@ -80,7 +80,4 @@ def is_path_excluded(rel_path: str, excludes) -> bool:
     p = Path(rel_path)
     base = p.name
     parts = set(p.parts)
-    for ex in excludes:
-        if ex == base or ex == rel_path or ex in parts:
-            return True
-    return False
+    return any(ex in (base, rel_path) or ex in parts for ex in excludes)

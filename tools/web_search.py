@@ -1,11 +1,17 @@
-"""联网搜索工具：通过 DuckDuckGo HTML 接口检索网页，无需 API Key"""
+"""联网搜索工具：通过 DuckDuckGo HTML 接口检索网页，无需 API Key
+
+提供同步（web_search）与异步（web_search_async）两个版本。
+"""
+
+import html as _html
+import os
+import re
+import urllib.parse
+
+import httpx
 
 from tools import registry
 from utils.logger import get_logger
-import httpx
-import re
-import html as _html
-import urllib.parse
 
 logger = get_logger(__name__)
 
@@ -15,7 +21,31 @@ _USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0.0.0 Safari/537.36"
 )
-_SEARCH_URL = "https://html.duckduckgo.com/html/"
+# 允许测试时用环境变量覆盖上游地址（性能测试 mock 用），默认走 DuckDuckGo
+_SEARCH_URL = os.getenv("WEB_SEARCH_URL", "https://html.duckduckgo.com/html/")
+
+
+def _norm_args(query: str, num_results: int) -> tuple[str, int]:
+    """归一化参数；query 为空返回 ("", 0) 由调用方转错误提示"""
+    if not query or not query.strip():
+        return "", 0
+    return query.strip(), max(1, min(int(num_results), 10))
+
+
+async def _fetch_page_async(query: str) -> str:
+    """异步发起搜索请求，返回 HTML 页面文本（或错误信息标记）"""
+    headers = {"User-Agent": _USER_AGENT}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+            resp = await client.post(_SEARCH_URL, data={"q": query}, headers=headers)
+            resp.raise_for_status()
+            return resp.text
+    except httpx.TimeoutException:
+        logger.warning("联网搜索超时: %s", query)
+        return "__TIMEOUT__"
+    except Exception as e:
+        logger.error("联网搜索失败: %s", e)
+        return "__ERROR__:" + str(e)
 
 
 @registry.register(
@@ -23,16 +53,15 @@ _SEARCH_URL = "https://html.duckduckgo.com/html/"
                 "当用户需要实时信息、最新新闻、或知识库之外的资料时调用。"
 )
 def web_search(query: str, num_results: int = 5) -> str:
-    """通过 DuckDuckGo 检索网页结果。
+    """通过 DuckDuckGo 检索网页结果（同步版）。
 
     Args:
         query: 搜索关键词，例如 "Python 异步编程 最佳实践"
         num_results: 返回结果条数，默认 5，范围 1-10
     """
-    if not query or not query.strip():
+    query, num_results = _norm_args(query, num_results)
+    if not query:
         return "请提供搜索关键词"
-    query = query.strip()
-    num_results = max(1, min(int(num_results), 10))
 
     headers = {"User-Agent": _USER_AGENT}
     try:
@@ -46,6 +75,33 @@ def web_search(query: str, num_results: int = 5) -> str:
     except Exception as e:
         logger.error("联网搜索失败: %s", e)
         return "联网搜索失败：" + str(e)
+
+    results = _parse_results(page, num_results)
+    if not results:
+        return "没有找到相关结果，换个关键词试试"
+    return _format_output(query, results)
+
+
+@registry.register_async(
+    description="联网搜索网页内容，获取与问题相关的最新网页结果（标题、摘要、链接）。"
+                "当用户需要实时信息、最新新闻、或知识库之外的资料时调用。"
+)
+async def web_search_async(query: str, num_results: int = 5) -> str:
+    """通过 DuckDuckGo 检索网页结果（异步版，Agent.arun 使用）。
+
+    Args:
+        query: 搜索关键词，例如 "Python 异步编程 最佳实践"
+        num_results: 返回结果条数，默认 5，范围 1-10
+    """
+    query, num_results = _norm_args(query, num_results)
+    if not query:
+        return "请提供搜索关键词"
+
+    page = await _fetch_page_async(query)
+    if page == "__TIMEOUT__":
+        return "搜索超时，请稍后重试"
+    if page.startswith("__ERROR__:"):
+        return "联网搜索失败：" + page[len("__ERROR__:"):]
 
     results = _parse_results(page, num_results)
     if not results:

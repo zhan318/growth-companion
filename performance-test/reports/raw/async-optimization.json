@@ -1,0 +1,19 @@
+{
+  "optimization": "P0 全链路异步化（方案C）",
+  "date": "2026-08-14",
+  "changes": [
+    "chatbot/chatbot.py: 新增 AsyncOpenAI achat/achat_stream（保留同步版）",
+    "tools/*.py: weather/web_search/hotlist/rag_tool/obsidian 新增 async 版工具",
+    "knowledge/pipeline.py: 新增 query_async/query_obsidian_async",
+    "agent/agent.py: 新增 arun/arun_stream（全异步 ReAct 循环，保留 run/run_stream）",
+    "api.py: /chat 与 /chat/stream 改用 arun/arun_stream",
+    "tools/__init__.py: registry 新增 async_tools 注册表 + register_async"
+  ],
+  "comparison": {
+    "1_user": {"sync": 3.69, "async": 2.8, "improve_pct": 24},
+    "10_user": {"sync": 23.5, "async": 14.7, "improve_pct": 37},
+    "30_user": {"sync": 43.5, "async": 43.8, "improve_pct": 0},
+    "50_user": {"sync": "0 req completed", "async": "1 req (58.5s)", "improve_pct": "limited"}
+  },
+  "conclusion": "10 并发改善 37%（事件循环不再阻塞）；30+ 并发瓶颈转移至 SQLite/Chroma 写锁竞争（P2 待优化）"
+}

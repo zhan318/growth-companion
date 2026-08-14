@@ -5,12 +5,7 @@
 各模块通过 get_logger(__name__) 获取 logger 实例。
 """
 
-import logging
-import sys
-from pathlib import Path
-
-
-# 日志格式
+import loggingimport sysfrom pathlib import Path# 日志格式
 _CONSOLE_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _FILE_FORMAT = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d: %(message)s"
 _DATE_FORMAT = "%H:%M:%S"

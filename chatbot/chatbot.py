@@ -1,12 +1,22 @@
-"""LLM 适配器：支持多模型动态切换"""
+"""LLM 适配器：支持多模型动态切换（同步 + 异步双通道）"""
 
-from openai import OpenAI
 from abc import ABC, abstractmethod
+
+from openai import AsyncOpenAI, OpenAI
+
 from config import (
-    DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL,
-    GLM_API_KEY, GLM_BASE_URL, GLM_MODEL,
-    QWEN_API_KEY, QWEN_BASE_URL, QWEN_MODEL,
-    YI_API_KEY, YI_BASE_URL, YI_MODEL,
+    DEEPSEEK_API_KEY,
+    DEEPSEEK_BASE_URL,
+    DEEPSEEK_MODEL,
+    GLM_API_KEY,
+    GLM_BASE_URL,
+    GLM_MODEL,
+    QWEN_API_KEY,
+    QWEN_BASE_URL,
+    QWEN_MODEL,
+    YI_API_KEY,
+    YI_BASE_URL,
+    YI_MODEL,
 )
 from utils.logger import get_logger
 
@@ -14,7 +24,7 @@ logger = get_logger(__name__)
 
 
 class BaseLLM(ABC):
-    """LLM 基类：统一 chat 接口"""
+    """LLM 基类：统一 chat 接口（同步 + 异步）"""
 
     @abstractmethod
     def chat(self, messages, tools=None, tool_choice="auto"):
@@ -22,7 +32,17 @@ class BaseLLM(ABC):
 
     @abstractmethod
     def chat_stream(self, messages, tools=None, tool_choice="auto"):
-        """流式调用，返回迭代器"""
+        """流式调用（同步），返回迭代器"""
+        ...
+
+    @abstractmethod
+    async def achat(self, messages, tools=None, tool_choice="auto"):
+        """异步调用（AsyncOpenAI），不阻塞事件循环"""
+        ...
+
+    @abstractmethod
+    async def achat_stream(self, messages, tools=None, tool_choice="auto"):
+        """异步流式调用，返回异步迭代器"""
         ...
 
     @property
@@ -33,10 +53,11 @@ class BaseLLM(ABC):
 
 
 class DeepSeekAdapter(BaseLLM):
-    """DeepSeek 官方 API"""
+    """DeepSeek 官方 API（同步 + 异步双客户端）"""
 
     def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
         self.client = OpenAI(api_key=api_key or DEEPSEEK_API_KEY, base_url=base_url or DEEPSEEK_BASE_URL)
+        self.aclient = AsyncOpenAI(api_key=api_key or DEEPSEEK_API_KEY, base_url=base_url or DEEPSEEK_BASE_URL)
         self.model = model or DEEPSEEK_MODEL
 
     @property
@@ -57,12 +78,27 @@ class DeepSeekAdapter(BaseLLM):
             kwargs["tool_choice"] = tool_choice
         return self.client.chat.completions.create(**kwargs)
 
+    async def achat(self, messages, tools=None, tool_choice="auto"):
+        kwargs = {"model": self.model, "messages": messages}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+        return await self.aclient.chat.completions.create(**kwargs)
+
+    async def achat_stream(self, messages, tools=None, tool_choice="auto"):
+        kwargs = {"model": self.model, "messages": messages, "stream": True}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+        return await self.aclient.chat.completions.create(**kwargs)
+
 
 class OpenAICompatibleAdapter(BaseLLM):
-    """通用 OpenAI 兼容适配器"""
+    """通用 OpenAI 兼容适配器（同步 + 异步双客户端）"""
 
     def __init__(self, model_name: str, api_key: str, base_url: str, label: str = ""):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.aclient = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model_name
         self._label = label or model_name
 
@@ -83,6 +119,20 @@ class OpenAICompatibleAdapter(BaseLLM):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
         return self.client.chat.completions.create(**kwargs)
+
+    async def achat(self, messages, tools=None, tool_choice="auto"):
+        kwargs = {"model": self.model, "messages": messages}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+        return await self.aclient.chat.completions.create(**kwargs)
+
+    async def achat_stream(self, messages, tools=None, tool_choice="auto"):
+        kwargs = {"model": self.model, "messages": messages, "stream": True}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+        return await self.aclient.chat.completions.create(**kwargs)
 
 
 # ===== 预设模型列表 =====
@@ -192,12 +242,24 @@ def create_llm(provider: str = "deepseek", user_key: dict = None) -> BaseLLM:
 
 
 def chat(messages, tools=None, tool_choice="auto", provider: str = "deepseek", user_key: dict = None):
-    """对外接口：支持每次请求指定模型与用户级 key"""
+    """对外接口（同步）：支持每次请求指定模型与用户级 key"""
     llm = create_llm(provider, user_key)
     return llm.chat(messages, tools, tool_choice)
 
 
 def chat_stream(messages, tools=None, tool_choice="auto", provider: str = "deepseek", user_key: dict = None):
-    """流式对外接口"""
+    """对外接口（同步流式）"""
     llm = create_llm(provider, user_key)
     return llm.chat_stream(messages, tools, tool_choice)
+
+
+async def achat(messages, tools=None, tool_choice="auto", provider: str = "deepseek", user_key: dict = None):
+    """对外接口（异步）：Agent.arun 使用，不阻塞事件循环"""
+    llm = create_llm(provider, user_key)
+    return await llm.achat(messages, tools, tool_choice)
+
+
+async def achat_stream(messages, tools=None, tool_choice="auto", provider: str = "deepseek", user_key: dict = None):
+    """对外接口（异步流式）"""
+    llm = create_llm(provider, user_key)
+    return await llm.achat_stream(messages, tools, tool_choice)

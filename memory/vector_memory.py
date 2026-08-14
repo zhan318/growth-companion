@@ -3,15 +3,18 @@
 与 knowledge 共用 ChromaDB 实例，但使用独立的 collection。
 """
 
-import chromadb
+import os
 from pathlib import Path
-from typing import List, Dict
+
+import chromadb
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 # 独立于知识库的持久化目录和 collection 名称
-_VECTOR_MEMORY_DIR = Path(__file__).parent / "vector_memory_db"
+# 允许测试时用环境变量覆盖存储目录（性能测试隔离用），默认 memory/vector_memory_db
+_VECTOR_MEMORY_DIR = Path(os.getenv("VECTOR_MEMORY_DIR", str(Path(__file__).parent / "vector_memory_db")))
 _COLLECTION_NAME = "conversation_memory"
 
 
@@ -51,7 +54,7 @@ class VectorMemory:
 
     # ── 检索 ──
 
-    def search(self, query: str, session_id: str | None = None, k: int = 3) -> List[Dict[str, str]]:
+    def search(self, query: str, session_id: str | None = None, k: int = 3) -> list[dict[str, str]]:
         """检索与 query 最相关的历史对话
 
         Args:

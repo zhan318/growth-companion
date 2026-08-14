@@ -1,9 +1,9 @@
 import ast
-import operator
 import math
+import operator
 from typing import Any
-from tools import registry
 
+from tools import registry
 
 # 安全节点白名单
 _ALLOWED_NODES = frozenset({
@@ -64,7 +64,7 @@ class _SafeEvaluator(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> Any:
         func = self.visit(node.func)
         if func not in _SAFE_FUNCS.values():
-            raise ValueError(f"不允许调用此函数")
+            raise ValueError("不允许调用此函数")
         args = [self.visit(a) for a in node.args]
         kwargs = {kw.arg: self.visit(kw.value) for kw in node.keywords if kw.arg}
         return func(*args, **kwargs)
@@ -86,7 +86,7 @@ class _SafeEvaluator(ast.NodeVisitor):
 
     def visit_Compare(self, node: ast.Compare) -> Any:
         left = self.visit(node.left)
-        for op, right_node in zip(node.ops, node.comparators):
+        for op, right_node in zip(node.ops, node.comparators, strict=True):
             right = self.visit(right_node)
             op_func = _CMPOP_MAP.get(type(op))
             if op_func is None:
@@ -133,7 +133,7 @@ def safe_eval(expression: str) -> Any:
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as e:
-        raise ValueError(f"表达式语法错误: {e}")
+        raise ValueError(f"表达式语法错误: {e}") from e
     _SafeEvaluator._validate_tree(tree)
     return _SafeEvaluator().visit(tree)
 

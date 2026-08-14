@@ -1,0 +1,20 @@
+{
+  "optimization": "P1：Agent 池 LRU 上限管理",
+  "date": "2026-08-14",
+  "changes": [
+    "api.py: 新增 AgentPool 类（OrderedDict LRU + threading.Lock + AGENT_POOL_MAX 环境变量默认 200）",
+    "api.py: _agent_pool 从普通 dict 改为 AgentPool 实例，get_agent 走 LRU 池",
+    "淘汰只释放内存实例壳，不清任何持久化数据（历史在 SQLite、向量记忆在 Chroma）"
+  ],
+  "verification": {
+    "lru_behavior": "单测通过：淘汰最久未用、池稳定在 max_size、淘汰后重建正常",
+    "50u_async_only": "49s / 1 req / 内存无上限增长(500MB+)",
+    "50u_async+wal+batch+lru": "40.6s / 6 req / 内存封顶(361MB)",
+    "evictions": "25 次淘汰日志确认生效（AGENT_POOL_MAX=30 测试）"
+  },
+  "notes": [
+    "Python GC 不立即归还内存给 OS，池封顶后内存稳定在峰值附近不再无上限增长",
+    "压测随机 session 放大淘汰频率；真实用户复用 session 时几乎不触发淘汰",
+    "AGENT_POOL_MAX 可按部署内存预算调整（默认 200）"
+  ]
+}

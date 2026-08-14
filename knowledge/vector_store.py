@@ -1,16 +1,15 @@
 """向量存储 —— 基于 LangChain Chroma 封装"""
 
 from pathlib import Path
-from typing import List
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStoreRetriever
 
+from utils.logger import get_logger
+
 from .config import config
 from .embeddings import get_embedding
-from .embeddings import get_embedding
-from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -34,7 +33,7 @@ class VectorStore:
 
     # ── 写入 ──
 
-    def add_documents(self, documents: List[Document]) -> int:
+    def add_documents(self, documents: list[Document]) -> int:
         """批量写入文档"""
         ids = self._store.add_documents(documents)
         logger.info("向量库写入 %d 条", len(documents))
@@ -52,7 +51,7 @@ class VectorStore:
             )
         return self._retriever
 
-    def search(self, query: str, k: int | None = None) -> List[Document]:
+    def search(self, query: str, k: int | None = None) -> list[Document]:
         """语义检索，返回 Document 列表"""
         retriever = self.get_retriever(k)
         docs = retriever.invoke(query)
@@ -75,7 +74,7 @@ class VectorStore:
             self._store.delete(ids)
             self._retriever = None
 
-    def add_documents_with_ids(self, documents: List[Document], ids):
+    def add_documents_with_ids(self, documents: list[Document], ids):
         """带确定性 id 写入，便于增量更新与去重。"""
         self._store.add_documents(documents, ids=ids)
         self._retriever = None
@@ -87,7 +86,6 @@ class VectorStore:
         return self._store._collection.count()
 
     def delete_all(self):
-        import gc
         # 删除旧 collection
         self._store.delete_collection()
         self._retriever = None

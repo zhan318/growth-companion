@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: smart-personal-assistant
+    ports:
+      - "8000:8000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OBSIDIAN_VAULT_DIR=${OBSIDIAN_VAULT_DIR:-}
+      - OBSIDIAN_EXCLUDE=${OBSIDIAN_EXCLUDE:-API.md}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-24}
+    volumes:
+      # 知识库文档（上传的 PDF/TXT/MD）
+      - ./knowledge/docs:/app/knowledge/docs
+      # SQLite 数据库（对话历史、用户）
+      - ./memory:/app/memory
+      # Chroma 向量存储
+      - ./knowledge/chroma_db:/app/knowledge/chroma_db
+      # Obsidian vault（如在本机，映射进去）
+      - ${OBSIDIAN_VAULT_DIR:-/tmp/empty_vault}:/vault:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

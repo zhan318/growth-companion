@@ -1,8 +1,9 @@
 """测试安全计算器"""
 import sys
+
 sys.path.insert(0, "..")
 
-from tools.calculator import calculate, safe_eval
+from tools.calculator import calculate
 
 
 def test_normal_math():

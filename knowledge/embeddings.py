@@ -1,10 +1,11 @@
 """Embedding 管理 —— 支持本地模型 / DeepSeek API"""
 
-from typing import List
+
 from langchain_core.embeddings import Embeddings
 
-from .config import config
 from utils.logger import get_logger
+
+from .config import config
 
 logger = get_logger(__name__)
 
@@ -16,10 +17,10 @@ class ChromaDefaultEmbeddings(Embeddings):
         from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
         self._fn = DefaultEmbeddingFunction()
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self._fn(texts)
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         return self._fn([text])[0]
 
 
@@ -31,11 +32,11 @@ class DeepSeekEmbeddings(Embeddings):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = "deepseek-embedding"
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
         resp = self.client.embeddings.create(model=self.model, input=texts)
         return [item.embedding for item in resp.data]
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         resp = self.client.embeddings.create(model=self.model, input=[text])
         return resp.data[0].embedding
 

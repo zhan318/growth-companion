@@ -7,19 +7,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/chat': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-      },
-      '/auth': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-      },
-      '/knowledge': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-      },
-      '/user': {
+      // 所有后端 API 路径统一代理（用正则覆盖 chat/auth/user/knowledge/notes/mbti/interview/dashboard/obsidian/models/health 等）
+      '^/(chat|auth|user|knowledge|notes|mbti|interview|dashboard|obsidian|models|health)(/.*)?$': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },

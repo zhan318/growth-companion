@@ -1,0 +1,7 @@
+﻿Attributes: Archive
+IsReadOnly: False
+--- ACL ---
+BUILTIN\Administrators | FullControl | Allow
+NT AUTHORITY\SYSTEM | FullControl | Allow
+NT AUTHORITY\Authenticated Users | Modify, Synchronize | Allow
+BUILTIN\Users | ReadAndExecute, Synchronize | Allow

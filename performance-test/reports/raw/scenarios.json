@@ -1,0 +1,88 @@
+{
+  "meta": {
+    "date": "2026-08-13/14",
+    "environment": "本地开发环境（uvicorn + vite dev）",
+    "llm": "mock LLM（OpenAI 兼容本地服务，150ms 基准延迟）",
+    "external_api": "mock 外部 API（天气/搜索/热榜，80ms 基准延迟）",
+    "rate_limit": "RATE_LIMIT_MAX=5000（临时调高，避开 30次/60s 内置限流）",
+    "db": "SQLite/Chroma 指向 D 盘临时目录（绕开沙盒保护）"
+  },
+  "locust_scenarios": [
+    {
+      "id": "single-baseline",
+      "scenario": "单工具基线（1 用户）",
+      "file": "baseline-single-final.html",
+      "requests": 20,
+      "fails": 0,
+      "avg_ms": 3689,
+      "p50_ms": 3300,
+      "p95_ms": 5888,
+      "max_ms": 5888,
+      "rps": 0.2,
+      "note": "/chat 与 /chat-multi-tool 混合（权重 5:1），单用户无并发压力"
+    },
+    {
+      "id": "stress-10u",
+      "scenario": "高并发 10 用户",
+      "file": "stress-10u.html",
+      "requests": 18,
+      "fails": 0,
+      "avg_ms": 23512,
+      "p50_ms": 26000,
+      "p95_ms": 35000,
+      "max_ms": 35239,
+      "rps": 0.34,
+      "note": "延迟较基线暴涨 7 倍"
+    },
+    {
+      "id": "stress-30u",
+      "scenario": "高并发 30 用户",
+      "file": "stress-30u.html",
+      "requests": 10,
+      "fails": 0,
+      "avg_ms": 43475,
+      "p50_ms": 44000,
+      "p95_ms": 57000,
+      "max_ms": 56886,
+      "rps": 0.17,
+      "note": "延迟继续恶化，吞吐反而下降"
+    },
+    {
+      "id": "stress-50u",
+      "scenario": "高并发 50 用户",
+      "file": "stress-50u.html",
+      "requests": 0,
+      "fails": 0,
+      "avg_ms": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "max_ms": null,
+      "rps": 0.0,
+      "note": "60 秒内 0 请求完成——请求全部堆积在事件循环队列，连接饥饿"
+    },
+    {
+      "id": "long-session",
+      "scenario": "长会话多轮（8 用户 × 20 轮）",
+      "file": "long-session.html",
+      "requests": 51,
+      "fails": 0,
+      "avg_ms": 13618,
+      "p50_ms": 16000,
+      "p95_ms": 18242,
+      "max_ms": 18242,
+      "rps": 0.5,
+      "note": "同一 session 连续对话，上下文增长导致单请求耗时升高"
+    }
+  ],
+  "diagnostic_30u": {
+    "scenario": "30 用户诊断复测",
+    "file": "diag-30u.html",
+    "requests": 7,
+    "fails": 0,
+    "avg_ms": 15089,
+    "p50_ms": 10000,
+    "p95_ms": 28000,
+    "max_ms": 28389,
+    "note": "后台有 soak 叠加时的复测，进一步确认队列堆积"
+  }
+}

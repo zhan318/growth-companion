@@ -1,8 +1,33 @@
 import { useState, useRef, useEffect } from 'react'
+import InterviewExam from './InterviewExam'
+import Markdown from './markdown'
+import Toast from './Toast'
+import Button from './Button'
+import { apiFetch } from './api'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+}
+
+// MBTI 16 型一句话描述
+const MBTI_DESC: Record<string, string> = {
+  ISTJ: '务实可靠，讲规则重承诺，天生的执行者',
+  ISFJ: '温和细心，默默守护，照顾他人感受',
+  INFJ: '理想主义，洞察人心，追求深层的意义',
+  INTJ: '独立理性，战略思维，目标感极强的规划者',
+  ISTP: '冷静灵活，动手能力强，喜欢研究事物原理',
+  ISFP: '安静敏感，活在当下，用行动而非言语表达',
+  INFP: '理想化，忠于内心价值观，想象力丰富',
+  INTP: '逻辑严密，好奇钻研，热爱抽象与理论',
+  ESTP: '精力充沛，反应快，享受刺激与实战',
+  ESFP: '热情开朗，活在当下，天生的气氛担当',
+  ENFP: '热情有感染力，充满创意，渴望可能性',
+  ENTP: '机敏善辩，点子多，喜欢挑战常规',
+  ESTJ: '果断高效，组织力强，天生的管理者',
+  ESFJ: '热心尽责，善于协调，重视人际关系和谐',
+  ENFJ: '富有感染力，乐于助人，天生的领导者',
+  ENTJ: '强势果决，远见卓识，天生的统帅',
 }
 
 function App() {
@@ -11,7 +36,7 @@ function App() {
   const [sessionId, setSessionId] = useState(() => localStorage.getItem('session_id') || '')
   const [userId, setUserId] = useState(() => Number(localStorage.getItem('user_id') || '0'))
   const [username, setUsername] = useState(() => localStorage.getItem('username') || '')
-  const [page, setPage] = useState<'auth' | 'chat' | 'profile'>(token ? 'chat' : 'auth')
+  const [page, setPage] = useState<'auth' | 'hub' | 'chat' | 'profile' | 'mbti' | 'dashboard'>(token ? 'hub' : 'auth')
 
   // ── 聊天状态 ──
   const [messages, setMessages] = useState<Message[]>([])
@@ -41,8 +66,31 @@ function App() {
   const [profileMsg, setProfileMsg] = useState({ type: '', text: '' })
   const [sessions, setSessions] = useState<any[]>([])
   const [showSidebar, setShowSidebar] = useState(true)
+  // 会话三点菜单：哪个会话的菜单打开 / 哪个会话在内联改标题 / 编辑中的标题值
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [editingFor, setEditingFor] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  // 工作模式：工作台｜模拟面试
+  const [chatMode, setChatMode] = useState<'workspace' | 'interview'>('workspace')
+  // MBTI 测试状态
+  const [mbtiStep, setMbtiStep] = useState(0)
+  const [mbtiRole, setMbtiRole] = useState('')
+  const [mbtiQuestions, setMbtiQuestions] = useState<any[]>([])
+  const [mbtiAnswers, setMbtiAnswers] = useState<number[]>([])
+  const [mbtiIdx, setMbtiIdx] = useState(0)
+  const [mbtiLoading, setMbtiLoading] = useState(false)
+  const [mbtiResult, setMbtiResult] = useState<any>(null)
+  const [mbtiError, setMbtiError] = useState('')
+  const [mbtiHistory, setMbtiHistory] = useState<any[]>([])
+  const [exportingMbti, setExportingMbti] = useState(false)
+  // 数据看板状态
+  const [dashboardStats, setDashboardStats] = useState<any>(null)
+  const [dashboardLoading, setDashboardLoading] = useState(false)
+  // 面试记录保存状态
+  const [savingInterview, setSavingInterview] = useState(false)
+  const [buildingWeakness, setBuildingWeakness] = useState(false)
   // 用户级 LLM 密钥（前端切换器用）
   const [configuredProviders, setConfiguredProviders] = useState<string[]>([])
   const [showKeySettings, setShowKeySettings] = useState(false)
@@ -84,6 +132,19 @@ function App() {
     return () => clearTimeout(timer)
   }, [toast])
 
+  // GitHub OAuth 回调：URL 带 github_token 时自动登录
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const ghToken = params.get('github_token')
+    if (!ghToken) return
+    // 清除 URL 中的 token
+    window.history.replaceState({}, '', window.location.pathname)
+    // 用 GitHub token 作为认证 token
+    saveAuth(ghToken, '', 0, '')
+    setPage('hub')
+    // 前端会通过 token 自动获取用户信息和会话列表
+  }, [])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
@@ -114,7 +175,7 @@ function App() {
       const body: any = { username: authUser.trim(), password: authPass }
       if (authMode === 'register') body.email = authEmail.trim()
 
-      const res = await fetch(`${apiBase}${endpoint}`, {
+      const res = await apiFetch(`${apiBase}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -123,10 +184,10 @@ function App() {
       const text = await res.text()
       let data: any
       try { data = JSON.parse(text) } catch { throw new Error('服务器返回了意外的响应，请检查后端是否已启动') }
-      if (!res.ok) { setAuthError(data.detail || '操作失败'); return }
+      if (!res.ok) { setAuthError(data.error?.detail || data.detail || '操作失败'); return }
 
       saveAuth(data.token, data.session_id, data.user_id, authUser.trim())
-      setPage('chat')
+      setPage('hub')
     } catch (e: any) {
       setAuthError(e.message || '网络错误')
     } finally {
@@ -136,12 +197,203 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${apiBase}/auth/logout`, {
+      await apiFetch(`${apiBase}/auth/logout`, {
         method: 'POST',
         headers: authHeaders(),
       })
     } catch { /* ignore */ }
     clearAuth()
+  }
+
+  // ── MBTI 测试操作 ──
+  const startMbti = async () => {
+    if (!mbtiRole.trim()) { setMbtiError('请先输入你的理想岗位'); return }
+    setMbtiError('')
+    setMbtiLoading(true)
+    try {
+      const res = await apiFetch(`${apiBase}/mbti/questions`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`加载题目失败: HTTP ${res.status}`)
+      const data = await res.json()
+      setMbtiQuestions(data.questions || [])
+      setMbtiAnswers([])
+      setMbtiIdx(0)
+      setMbtiResult(null)
+      setMbtiStep(1)
+    } catch (e: any) {
+      setMbtiError(e.message || '加载题目失败')
+    } finally {
+      setMbtiLoading(false)
+    }
+  }
+
+  const answerMbti = async (optIdx: number) => {
+    const newAnswers = [...mbtiAnswers]
+    newAnswers[mbtiIdx] = optIdx
+    setMbtiAnswers(newAnswers)
+
+    // 最后一题 → 提交
+    if (mbtiIdx >= mbtiQuestions.length - 1) {
+      await submitMbti(newAnswers)
+    } else {
+      setMbtiIdx(mbtiIdx + 1)
+    }
+  }
+
+  const submitMbti = async (answers: number[]) => {
+    setMbtiLoading(true)
+    setMbtiError('')
+    try {
+      // 题库是随机顺序返回的，提交前按题目 id 升序重排，保证与后端固定题库对应
+      const byId = mbtiQuestions
+        .map((q, i) => ({ id: q.id, ans: answers[i] }))
+        .sort((a: any, b: any) => a.id - b.id)
+      const sortedAnswers = byId.map((x: any) => x.ans)
+
+      const res = await apiFetch(`${apiBase}/mbti/analyze`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ ideal_role: mbtiRole, answers: sortedAnswers }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `分析失败: HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setMbtiResult(data)
+      setMbtiStep(2)
+      // 拉取历史（结果页展示类型稳定性）
+      try {
+        const hres = await apiFetch(`${apiBase}/mbti/history`, { headers: authHeaders() })
+        if (hres.ok) {
+          const hdata = await hres.json()
+          setMbtiHistory(hdata.history || [])
+        }
+      } catch { /* 历史拉取失败不影响结果展示 */ }
+    } catch (e: any) {
+      setMbtiError(e.message || '分析失败，请重试')
+      setMbtiStep(1)
+    } finally {
+      setMbtiLoading(false)
+    }
+  }
+
+  const resetMbti = () => {
+    setMbtiStep(0)
+    setMbtiRole('')
+    setMbtiQuestions([])
+    setMbtiAnswers([])
+    setMbtiIdx(0)
+    setMbtiResult(null)
+    setMbtiError('')
+  }
+
+  // ── MBTI 档案导出 ──
+  const exportMbti = async () => {
+    setExportingMbti(true)
+    try {
+      const res = await apiFetch(`${apiBase}/mbti/export`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          mbti: mbtiResult.mbti,
+          ideal_role: mbtiRole,
+          analysis: mbtiResult.analysis || '',
+          scores: mbtiResult.scores || {},
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || '导出失败')
+      }
+      const data = await res.json()
+      setToast(`已导出档案：${data.path}`)
+    } catch (e: any) {
+      setToast(e.message || '导出失败')
+    } finally {
+      setExportingMbti(false)
+    }
+  }
+
+  // ── 数据看板 ──
+  const fetchDashboard = async () => {
+    setDashboardLoading(true)
+    try {
+      const res = await apiFetch(`${apiBase}/dashboard/stats`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`加载失败 (HTTP ${res.status})`)
+      const data = await res.json()
+      setDashboardStats(data)
+      setToast('已更新')
+    } catch (e: any) {
+      // 失败时填默认值（不 null），UI 至少能显示 0，不变全貌空白
+      setDashboardStats((prev: any) => prev || {
+        notes_count: 0, interview_count: 0, mbti_count: 0, session_count: 0, mbti_history: [],
+      })
+      setToast(e?.message || '加载失败')
+    } finally {
+      setDashboardLoading(false)
+    }
+  }
+
+  // ── 面试记录归档 ──
+  const handleSaveInterview = async () => {
+    setSavingInterview(true)
+    try {
+      const res = await apiFetch(`${apiBase}/interview/save`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || '保存失败')
+      }
+      const data = await res.json()
+      setToast(`已保存到 Obsidian：${data.path}`)
+    } catch (e: any) {
+      setToast(e.message || '保存失败')
+    } finally {
+      setSavingInterview(false)
+    }
+  }
+
+  // ── 薄弱点画像 ──
+  const handleWeaknessProfile = async () => {
+    setBuildingWeakness(true)
+    try {
+      const res = await apiFetch(`${apiBase}/interview/weakness`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || '生成失败')
+      }
+      const data = await res.json()
+      setToast(`已生成画像（基于 ${data.record_count} 份记录）：${data.path}`)
+    } catch (e: any) {
+      setToast(e.message || '生成失败')
+    } finally {
+      setBuildingWeakness(false)
+    }
+  }
+
+  // ── 一键存为 Obsidian 笔记 ──
+  const saveAsNote = async (content: string) => {
+    try {
+      const res = await apiFetch(`${apiBase}/notes/save`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ content }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || '保存失败')
+      }
+      const data = await res.json()
+      setToast(`已存为笔记：${data.path}`)
+    } catch (e: any) {
+      setToast(e.message || '保存失败')
+    }
   }
 
   // 切换账号：不清除 token，让登录页可以返回聊天
@@ -153,7 +405,7 @@ function App() {
   // ── 个人主页操作 ──
   const fetchProfile = async () => {
     try {
-      const res = await fetch(`${apiBase}/user/profile`, { headers: authHeaders() })
+      const res = await apiFetch(`${apiBase}/user/profile`, { headers: authHeaders() })
       if (!res.ok) throw new Error('获取信息失败')
       const data = await res.json()
       setProfileInfo(data)
@@ -167,7 +419,7 @@ function App() {
     e.preventDefault()
     setProfileMsg({ type: '', text: '' })
     try {
-      const res = await fetch(`${apiBase}/user/profile`, {
+      const res = await apiFetch(`${apiBase}/user/profile`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ display_name: profileName.trim() }),
@@ -187,7 +439,7 @@ function App() {
     if (pwdNew.length < 6) { setProfileMsg({ type: 'error', text: '新密码至少 6 位' }); return }
     if (pwdNew !== pwdNew2) { setProfileMsg({ type: 'error', text: '两次密码不一致' }); return }
     try {
-      const res = await fetch(`${apiBase}/user/password`, {
+      const res = await apiFetch(`${apiBase}/user/password`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ old_password: pwdOld, new_password: pwdNew }),
@@ -204,7 +456,7 @@ function App() {
   // ── 会话管理 ──
   const fetchSessions = async () => {
     try {
-      const res = await fetch(`${apiBase}/user/sessions`, { headers: authHeaders() })
+      const res = await apiFetch(`${apiBase}/user/sessions`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setSessions(data.sessions || [])
@@ -216,7 +468,7 @@ function App() {
   const fetchMessages = async (sid: string) => {
     setHistoryLoading(true)
     try {
-      const res = await fetch(`${apiBase}/user/sessions/${sid}/messages?limit=200`, { headers: authHeaders() })
+      const res = await apiFetch(`${apiBase}/user/sessions/${sid}/messages?limit=200`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setMessages(data.messages || [])
@@ -244,7 +496,7 @@ function App() {
 
   const newSession = async () => {
     try {
-      const res = await fetch(`${apiBase}/user/sessions`, {
+      const res = await apiFetch(`${apiBase}/user/sessions`, {
         method: 'POST',
         headers: authHeaders(),
       })
@@ -258,7 +510,7 @@ function App() {
 
   const deleteSession = async (sid: string) => {
     try {
-      const res = await fetch(`${apiBase}/user/sessions/${sid}`, {
+      const res = await apiFetch(`${apiBase}/user/sessions/${sid}`, {
         method: 'DELETE',
         headers: authHeaders(),
       })
@@ -275,10 +527,66 @@ function App() {
     } catch {}
   }
 
+  // ── 会话操作：修改标题 / 保存到笔记 ──
+  const renameSession = async (sid: string, label: string) => {
+    setEditingFor(null)
+    const title = label.trim()
+    if (!title) { setToast('标题不能为空'); return }
+    try {
+      const res = await apiFetch(`${apiBase}/user/sessions/${sid}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: title }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || '修改失败')
+      setSessions((prev: any[]) => prev.map((s) =>
+        s.session_id === sid ? { ...s, label: title } : s,
+      ))
+      setToast('标题已更新')
+    } catch (e: any) {
+      setToast(e.message || '修改失败')
+    }
+  }
+
+  const saveSessionToNote = async (sid: string) => {
+    setMenuFor(null)
+    try {
+      const res = await apiFetch(`${apiBase}/notes/save-session`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sid }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || '保存失败')
+      setToast(`已保存到 Obsidian：${data.path}`)
+    } catch (e: any) {
+      setToast(e.message || '保存失败')
+    }
+  }
+
+  // 按创建时间给会话分组（今天 / 7 天内 / 30 天内 / 更早）
+  const groupSessions = (list: any[]) => {
+    const now = new Date()
+    const today = new Date(now); today.setHours(0, 0, 0, 0)
+    const d7 = new Date(today); d7.setDate(d7.getDate() - 7)
+    const d30 = new Date(today); d30.setDate(d30.getDate() - 30)
+    const buckets: Record<string, any[]> = { 今天: [], 七天内: [], 三十天内: [], 更早: [] }
+    for (const s of list) {
+      const d = new Date(s.created_at)
+      if (isNaN(d.getTime())) { buckets.更早.push(s); continue }
+      if (d >= today) buckets.今天.push(s)
+      else if (d >= d7) buckets.七天内.push(s)
+      else if (d >= d30) buckets.三十天内.push(s)
+      else buckets.更早.push(s)
+    }
+    return Object.entries(buckets).filter(([, v]) => v.length > 0)
+  }
+
   // 加载当前用户已配置的模型密钥（用于切换器标记「你的密钥」）
   const fetchLLMKeys = async () => {
     try {
-      const res = await fetch(`${apiBase}/user/llm-keys`, { headers: authHeaders() })
+      const res = await apiFetch(`${apiBase}/user/llm-keys`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         setConfiguredProviders(data.configured_providers || [])
@@ -289,7 +597,7 @@ function App() {
   // 拉取各模型「是否真正配置密钥」状态（用于切换器标记兜底 + 切换提示）
   const fetchModels = async () => {
     try {
-      const res = await fetch(`${apiBase}/models`, { headers: authHeaders() })
+      const res = await apiFetch(`${apiBase}/models`, { headers: authHeaders() })
       if (res.ok) {
         const data = await res.json()
         const eff: Record<string, boolean> = {}
@@ -315,7 +623,7 @@ function App() {
     try {
       for (const [provider, apiKey] of Object.entries(keyDrafts)) {
         if (apiKey && apiKey.trim()) {
-          await fetch(`${apiBase}/user/llm-keys`, {
+          await apiFetch(`${apiBase}/user/llm-keys`, {
             method: 'PUT',
             headers: authHeaders(),
             body: JSON.stringify({ provider, api_key: apiKey.trim() }),
@@ -336,7 +644,7 @@ function App() {
 
   const deleteKey = async (provider: string) => {
     try {
-      await fetch(`${apiBase}/user/llm-keys/${provider}`, { method: 'DELETE', headers: authHeaders() })
+      await apiFetch(`${apiBase}/user/llm-keys/${provider}`, { method: 'DELETE', headers: authHeaders() })
       await fetchLLMKeys()
       await fetchModels()
       setToast(`已删除 ${MODEL_INFO[provider]?.label || provider} 的密钥`)
@@ -359,10 +667,10 @@ function App() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${apiBase}/chat`, {
+      const res = await apiFetch(`${apiBase}/chat`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ message: text, session_id: sessionId, model_provider: modelProvider }),
+        body: JSON.stringify({ message: text, session_id: sessionId, model_provider: modelProvider, mode: chatMode }),
       })
 
       if (!res.ok) {
@@ -404,20 +712,24 @@ function App() {
   if (page === 'auth') {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-gray-50 dark:bg-gray-950">
+      <Toast message={toast} />
         <div className="w-full max-w-sm mx-4">
           <div className="text-center mb-8">
-            <p className="text-5xl mb-3">🤖</p>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">AI Agent</h1>
-            <p className="text-sm text-gray-400 mt-1">登录以继续使用</p>
+            <p className="text-5xl mb-3">🧠</p>
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">智能个人助手</h1>
+            <p className="text-sm text-gray-400 mt-1">连接你的 Obsidian 笔记库</p>
           </div>
 
           {/* 如果已登录（切换账号场景），显示返回聊天按钮 */}
           {token && (
             <div className="text-center mb-2">
-              <button onClick={() => setPage('chat')}
-                className="text-sm text-blue-500 hover:text-blue-400 transition cursor-pointer">
-                ← 返回聊天
-              </button>
+        <Button
+          variant="secondary"
+          size="sm"
+          isDark={false}
+          onClick={() => setPage('hub')}
+          className="text-sm"
+        >返回入口</Button>
             </div>
           )}
           <form onSubmit={handleAuth} className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 space-y-4">
@@ -487,8 +799,338 @@ function App() {
                 <>已有账号？<button type="button" onClick={() => { setAuthMode('login'); setAuthError('') }} className="text-blue-500 hover:underline cursor-pointer">登录</button></>
               )}
             </p>
+
+            {/* GitHub 登录按钮 */}
+            <div className="relative pt-3">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200 dark:border-gray-700"></div></div>
+              <div className="relative flex justify-center"><span className="bg-white dark:bg-gray-900 px-2 text-xs text-gray-400">或</span></div>
+            </div>
+            <a
+              href={`${apiBase}/auth/github/login`}
+              className="flex items-center justify-center gap-2 w-full rounded-xl bg-gray-800 dark:bg-gray-700 py-2.5 text-sm font-medium text-white hover:bg-gray-700 dark:hover:bg-gray-600 transition cursor-pointer no-underline"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+              GitHub 登录
+            </a>
           </form>
         </div>
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════
+  //  渲染：功能入口页（hub）
+  // ═══════════════════════════════════════
+  if (page === 'hub') {
+    return (
+      <div className="relative flex flex-col min-h-dvh overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+      <Toast message={toast} />
+        {/* 浮动装饰圆点 */}
+        <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+          <div className="hub-blob absolute w-80 h-80 rounded-full bg-blue-200/50 dark:bg-blue-500/10" style={{ top: '6%', left: '8%' }} />
+          <div className="hub-blob absolute w-64 h-64 rounded-full bg-purple-200/50 dark:bg-purple-500/10" style={{ bottom: '18%', left: '14%', animationDelay: '1.4s' }} />
+          <div className="hub-blob absolute w-72 h-72 rounded-full bg-pink-200/40 dark:bg-pink-500/10" style={{ top: '12%', right: '6%', animationDelay: '0.7s' }} />
+          <div className="hub-blob absolute w-48 h-48 rounded-full bg-teal-200/40 dark:bg-teal-500/10" style={{ bottom: '8%', right: '14%', animationDelay: '2.1s' }} />
+        </div>
+
+        {/* 顶部工具条 */}
+        <header className="relative z-10 shrink-0 flex items-center justify-between px-6 py-4">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">智能个人助手</span>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-gray-500 dark:text-gray-400">{username}</span>
+            <button onClick={() => { setPage('profile'); setTimeout(fetchProfile, 50) }}
+              className="text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400 transition cursor-pointer">个人中心</button>
+            <button onClick={() => setIsDark(!isDark)}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition cursor-pointer">
+              {isDark ? '☀️' : '🌙'}
+            </button>
+            <button onClick={handleLogout}
+              className="text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 transition cursor-pointer">退出</button>
+          </div>
+        </header>
+
+        {/* 欢迎区 */}
+        <main className="relative z-10 flex-1 flex flex-col justify-center px-6 md:px-12">
+          <div className="hub-fade-up">
+            <p className="text-6xl mb-4">🧠</p>
+            <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">
+              欢迎回来，{username || '朋友'}
+            </h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">今天想做点什么？选择一个入口开始。</p>
+          </div>
+        </main>
+
+        {/* 右下角功能入口卡片 */}
+        <div className="relative z-10 shrink-0 flex flex-wrap justify-end items-end gap-5 px-6 pb-8 md:px-12">
+          <button onClick={() => { setChatMode('workspace'); setMessages([]); setPage('chat') }}
+            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            <div className="flex items-start justify-between">
+              <span className="text-4xl transition-transform duration-300 group-hover:scale-110">🧠</span>
+              <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">工作台</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">日常问答 · Obsidian 笔记 · 查天气、算数学、看 AI 热榜、搜网页</p>
+          </button>
+
+          <button onClick={() => { setChatMode('interview'); setMessages([]); setPage('chat') }}
+            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-purple-400 dark:hover:border-purple-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            <div className="flex items-start justify-between">
+              <span className="text-4xl transition-transform duration-300 group-hover:scale-110">🎯</span>
+              <span className="text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">模拟面试</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">考试式答题 · 自动总结到知识库 · 薄弱点分析</p>
+          </button>
+
+          <button onClick={() => { setPage('mbti') }}
+            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-teal-400 dark:hover:border-teal-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            <div className="flex items-start justify-between">
+              <span className="text-4xl transition-transform duration-300 group-hover:scale-110">🧭</span>
+              <span className="text-teal-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">MBTI 性格测试</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">输入理想岗位 · 30 道选择题 · 测出你的 MBTI 并分析岗位适配度</p>
+          </button>
+
+          <button onClick={() => { setPage('dashboard'); fetchDashboard() }}
+            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            <div className="flex items-start justify-between">
+              <span className="text-4xl transition-transform duration-300 group-hover:scale-110">📊</span>
+              <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-gray-800 dark:text-gray-100">数据看板</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">笔记数 · 面试次数 · MBTI 历史，你的学习成长轨迹</p>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════
+  //  渲染：MBTI 性格测试
+  // ═══════════════════════════════════════
+  if (page === 'mbti') {
+    const q = mbtiQuestions[mbtiIdx]
+    const progress = mbtiQuestions.length ? Math.round((mbtiIdx / mbtiQuestions.length) * 100) : 0
+    return (
+      <div className="relative flex flex-col min-h-dvh overflow-hidden bg-gradient-to-br from-teal-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+      <Toast message={toast} />
+        <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+          <div className="hub-blob absolute w-72 h-72 rounded-full bg-teal-200/40 dark:bg-teal-500/10" style={{ top: '8%', right: '6%' }} />
+          <div className="hub-blob absolute w-64 h-64 rounded-full bg-blue-200/40 dark:bg-blue-500/10" style={{ bottom: '12%', left: '8%', animationDelay: '1.6s' }} />
+        </div>
+
+        <header className="relative z-10 shrink-0 flex items-center justify-between px-6 py-4">
+          <button onClick={() => setPage('hub')}
+            className="text-sm text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400 transition cursor-pointer">← 返回入口</button>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">MBTI 性格测试</span>
+        </header>
+
+        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pb-10">
+          {/* 第 1 步：输入理想岗位 */}
+          {mbtiStep === 0 && (
+            <div className="w-full max-w-xl text-center hub-fade-up">
+              <p className="text-6xl mb-4">🧭</p>
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">MBTI 性格测试</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 mb-8">
+                先告诉我你的理想岗位，测试完成后会分析你的性格与它的适配差异
+              </p>
+              <input
+                value={mbtiRole}
+                onChange={(e) => setMbtiRole(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') startMbti() }}
+                placeholder="输入理想岗位，如：后端开发 / 产品经理 / 数据分析师"
+                className={`w-full rounded-2xl border px-5 py-4 text-lg text-center outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 transition ${isDark ? "border-gray-700 bg-gray-900 text-gray-100 placeholder-gray-500" : "border-gray-300 bg-white text-gray-800 placeholder-gray-400"}`}
+              />
+              {mbtiError && <p className="text-sm text-red-500 mt-3">{mbtiError}</p>}
+              <button
+                onClick={startMbti}
+                disabled={mbtiLoading}
+                className="mt-6 px-10 py-3 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-medium text-base transition cursor-pointer disabled:opacity-50"
+              >{mbtiLoading ? '加载题目中...' : '开始测试 →'}</button>
+            </div>
+          )}
+
+          {/* 第 2 步：答题 */}
+          {mbtiStep === 1 && q && (
+            <div className="w-full max-w-2xl hub-fade-up">
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
+                <span>第 {mbtiIdx + 1} / {mbtiQuestions.length} 题</span>
+                <span>{progress}%</span>
+              </div>
+              <div className={`h-1.5 rounded-full overflow-hidden mb-8 ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>
+                <div className="h-full bg-teal-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+              </div>
+
+              <h2 className="text-xl md:text-2xl font-semibold text-gray-800 dark:text-gray-100 text-center mb-8">{q.text}</h2>
+
+              <div className="space-y-4">
+                {q.options.map((opt: any, i: number) => (
+                  <button
+                    key={i}
+                    onClick={() => answerMbti(i)}
+                    disabled={mbtiLoading}
+                    className={`w-full flex items-center gap-4 rounded-2xl border px-5 py-4 text-left transition-all duration-200 cursor-pointer disabled:opacity-60 group ${
+                      isDark
+                        ? "border-gray-700 bg-gray-900 hover:border-teal-500 hover:bg-gray-800 text-gray-100"
+                        : "border-gray-200 bg-white hover:border-teal-500 hover:bg-teal-50/50 text-gray-800"
+                    }`}
+                  >
+                    <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${isDark ? "bg-gray-800 text-gray-300 group-hover:bg-teal-600 group-hover:text-white" : "bg-gray-100 text-gray-500 group-hover:bg-teal-600 group-hover:text-white"} transition`}>
+                      {opt.label}
+                    </span>
+                    <span className="text-base">{opt.text}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-between mt-6">
+                <button
+                  onClick={() => setMbtiIdx(Math.max(0, mbtiIdx - 1))}
+                  className={`text-sm px-4 py-2 rounded-xl border transition cursor-pointer ${mbtiIdx === 0 ? "opacity-0 pointer-events-none" : ""} ${isDark ? "border-gray-700 text-gray-400 hover:text-gray-200" : "border-gray-300 text-gray-500 hover:text-gray-700"}`}
+                >← 上一题</button>
+                <span className="text-xs text-gray-400 self-center">{mbtiLoading ? '分析中...' : '选择后将自动进入下一题'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* 第 3 步：结果 */}
+          {mbtiStep === 2 && mbtiResult && (
+            <div className="w-full max-w-2xl hub-fade-up">
+              <div className={`rounded-3xl border p-8 ${isDark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"} shadow-lg`}>
+                <p className="text-center text-xs text-gray-400">你的 MBTI 类型</p>
+                <p className="text-center text-6xl font-bold text-teal-600 dark:text-teal-400 mt-2 tracking-wider">{mbtiResult.mbti}</p>
+                <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-3">{MBTI_DESC[mbtiResult.mbti] || ''}</p>
+
+                <div className="mt-6 flex justify-center gap-4 text-xs">
+                  {Object.entries(mbtiResult.scores || {}).map(([k, v]: any) => (
+                    <span key={k} className={`px-2 py-1 rounded ${isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-600"}`}>{k}: {v}</span>
+                  ))}
+                </div>
+
+                <div className="mt-6 border-t pt-6 border-gray-100 dark:border-gray-800">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    理想岗位「{mbtiRole}」的适配分析
+                  </p>
+                  <div className="markdown-body">
+                    <Markdown content={mbtiResult.analysis || ''} />
+                  </div>
+                </div>
+
+                {mbtiHistory.length > 1 && (
+                  <div className="mt-6 border-t pt-6 border-gray-100 dark:border-gray-800">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">历史测试（观察类型稳定性）</p>
+                    <div className="space-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {mbtiHistory.slice(0, 6).map((h: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <span className="font-mono">{h.created_at?.slice(0, 16) || ''}</span>
+                          <span className={`font-semibold ${h.mbti === mbtiResult.mbti ? "text-teal-600 dark:text-teal-400" : "text-gray-500 dark:text-gray-400"}`}>{h.mbti}</span>
+                          <span className="truncate max-w-[40%]">{h.ideal_role || '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-8 flex flex-wrap justify-center gap-4">
+                  <button onClick={resetMbti}
+                    className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium transition cursor-pointer">重新测试</button>
+                  <button onClick={exportMbti} disabled={exportingMbti}
+                    className="px-6 py-2.5 rounded-xl border border-teal-500 text-teal-600 dark:text-teal-400 text-sm font-medium transition cursor-pointer hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-50">
+                    {exportingMbti ? '导出中...' : '📝 导出档案'}
+                  </button>
+                  <button onClick={() => setPage('hub')}
+                    className={`px-6 py-2.5 rounded-xl border text-sm transition cursor-pointer ${isDark ? "border-gray-700 text-gray-300 hover:text-gray-100" : "border-gray-300 text-gray-600 hover:text-gray-800"}`}>返回入口</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {mbtiStep === 1 && !q && (
+            <p className="text-gray-500">{mbtiLoading ? '加载题目中...' : '题目加载失败，请返回重试'}</p>
+          )}
+        </main>
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════
+  //  渲染：数据看板
+  // ═══════════════════════════════════════
+  if (page === 'dashboard') {
+    const stats = dashboardStats
+    const cards = [
+      { icon: '📚', label: '知识库笔记', value: stats?.notes_count, color: 'text-blue-500' },
+      { icon: '🎯', label: '面试记录', value: stats?.interview_count, color: 'text-purple-500' },
+      { icon: '🧭', label: 'MBTI 测试', value: stats?.mbti_count, color: 'text-teal-500' },
+      { icon: '💬', label: '会话数', value: stats?.session_count, color: 'text-amber-500' },
+    ]
+    return (
+      <div className="relative flex flex-col min-h-dvh overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+      <Toast message={toast} />
+        <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+          <div className="hub-blob absolute w-72 h-72 rounded-full bg-blue-200/40 dark:bg-blue-500/10" style={{ top: '8%', left: '6%' }} />
+          <div className="hub-blob absolute w-64 h-64 rounded-full bg-purple-200/40 dark:bg-purple-500/10" style={{ bottom: '10%', right: '8%', animationDelay: '1.5s' }} />
+        </div>
+
+        <header className="relative z-10 shrink-0 flex items-center justify-between px-6 py-4">
+      <Button
+        variant="ghost"
+        size="sm"
+        isDark={isDark}
+        onClick={() => setPage('hub')}
+        title="返回功能入口"
+      >← 返回入口</Button>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">数据看板</span>
+        </header>
+
+        <main className="relative z-10 flex-1 flex flex-col items-center px-6 pb-10">
+          <div className="w-full max-w-3xl hub-fade-up">
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-1">📊 数据看板</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">你的学习与使用轨迹</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {cards.map((c, i) => (
+                <div key={i} className={`rounded-2xl border p-5 text-center ${isDark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"} shadow-sm`}>
+                  <p className="text-3xl mb-2">{c.icon}</p>
+                  <p className={`text-3xl font-bold ${c.color}`}>{stats ? c.value : '—'}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{c.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {(stats?.mbti_history?.length || 0) > 0 && (
+              <div className={`mt-6 rounded-2xl border p-6 ${isDark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"} shadow-sm`}>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">MBTI 测试历史</p>
+                <div className="space-y-2 text-sm">
+                  {stats.mbti_history.map((h: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400 font-mono">{h.created_at?.slice(0, 16) || ''}</span>
+                      <span className="font-semibold text-gray-700 dark:text-gray-200">{h.mbti}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">{h.ideal_role || '-'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-8 flex justify-center gap-4">
+        <Button
+          variant="secondary"
+          size="md"
+          isDark={isDark}
+          onClick={fetchDashboard}
+          disabled={dashboardLoading}
+        >{dashboardLoading ? '刷新中...' : '刷新'}</Button>
+        <Button
+          variant="ghost"
+          size="md"
+          isDark={isDark}
+          onClick={() => setPage('hub')}
+        >返回入口</Button>
+            </div>
+          </div>
+        </main>
       </div>
     )
   }
@@ -499,12 +1141,13 @@ function App() {
   if (page === 'profile') {
     return (
       <div className="flex flex-col h-dvh bg-gray-50 dark:bg-gray-950">
+      <Toast message={toast} />
         <header className="shrink-0 border-b px-4 py-3 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
           <div className="max-w-3xl mx-auto flex items-center justify-between">
             <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">个人中心</h1>
-            <button onClick={() => setPage('chat')}
+            <button onClick={() => setPage('hub')}
               className="text-xs text-blue-500 hover:text-blue-400 transition cursor-pointer">
-              返回聊天
+              返回入口
             </button>
           </div>
         </header>
@@ -570,33 +1213,119 @@ function App() {
   // ═══════════════════════════════════════
   //  渲染：聊天页
   // ═══════════════════════════════════════
+
+  // 面试模式：渲染独立考试式组件（无侧栏、无聊天流）
+  if (page === 'chat' && chatMode === 'interview') {
+    return (
+      <div className="flex h-dvh">
+      <Toast message={toast} />
+        <div className={`flex flex-col flex-1 ${isDark ? 'bg-gray-950 text-gray-100' : 'bg-gradient-to-br from-purple-50 via-white to-indigo-50 text-gray-800'}`}>
+          <header className={`shrink-0 border-b px-4 py-3 ${isDark ? "border-gray-800" : "border-purple-200 bg-white/70"}`}>
+            <div className="max-w-3xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPage('hub')}
+                  className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition cursor-pointer"
+                  title="返回入口">←</button>
+                <span className="font-semibold text-purple-600 dark:text-purple-400">🎯 模拟面试</span>
+              </div>
+            </div>
+          </header>
+          <InterviewExam
+            apiBase={apiBase}
+            authHeaders={authHeaders}
+            modelProvider={modelProvider}
+            isDark={isDark}
+            onExit={() => setPage('hub')}
+            onToast={setToast}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-dvh">
+  <Toast message={toast} />
       {/* 侧边栏 - 历史会话 */}
       <aside className={`${showSidebar ? "w-60" : "w-0"} flex-shrink-0 transition-all duration-200 overflow-hidden border-r ${isDark ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
         <div className="flex flex-col h-full">
           <div className="p-3">
-            <button onClick={newSession}
-              className="w-full rounded-lg border border-dashed border-gray-400 dark:border-gray-600 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-500 hover:border-blue-500 transition cursor-pointer">
-              + 新建对话
-            </button>
+      <Button
+        variant="primary"
+        size="sm"
+        isDark={isDark}
+        onClick={newSession}
+        className="w-full"
+      >+ 新建会话</Button>
           </div>
           <nav className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
-            {sessions.map((s: any) => (
-              <div key={s.session_id}
-                className={`group flex items-center gap-1 rounded-lg px-3 py-2 text-sm cursor-pointer transition ${
-                  s.session_id === sessionId
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                    : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
-                }`}
-                onClick={() => switchSession(s.session_id)}
-              >
-                <span className="flex-1 truncate" title={s.preview || s.label}>
-                  {s.preview || s.label}
-                </span>
-                <button onClick={(e) => { e.stopPropagation(); deleteSession(s.session_id) }}
-                  className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500 transition cursor-pointer shrink-0"
-                  title="删除">✕</button>
+            {groupSessions(sessions).map(([groupName, items]: [string, any[]]) => (
+              <div key={groupName}>
+                <p className="px-3 pt-3 pb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">{groupName}</p>
+                {items.map((s: any) => (
+                  <div key={s.session_id} className="relative group">
+                    <div
+                      className={`flex items-center gap-1 rounded-lg px-3 py-2 text-sm cursor-pointer transition ${
+                        s.session_id === sessionId
+                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                          : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+                      }`}
+                      onClick={() => switchSession(s.session_id)}
+                    >
+                      {/* 标题或内联编辑框 */}
+                      {editingFor === s.session_id ? (
+                        <input
+                          autoFocus
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') renameSession(s.session_id, editingTitle)
+                            if (e.key === 'Escape') setEditingFor(null)
+                          }}
+                          onBlur={() => renameSession(s.session_id, editingTitle)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 min-w-0 text-xs rounded px-1.5 py-0.5 border border-blue-500 outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                          placeholder="输入新标题"
+                        />
+                      ) : (
+                        <span className="flex-1 truncate" title={s.preview || s.label}>
+                          {s.label || s.preview || '新对话'}
+                        </span>
+                      )}
+                      {/* 三个点菜单按钮（hover 显示） */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === s.session_id ? null : s.session_id) }}
+                        className="opacity-0 group-hover:opacity-100 shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-1 rounded cursor-pointer transition"
+                        title="会话操作"
+                      >⋯</button>
+                    </div>
+                    {/* 三点弹出菜单 */}
+                    {menuFor === s.session_id && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMenuFor(null) }} />
+                        <div
+                          className={`absolute right-2 top-8 z-50 w-40 rounded-xl border shadow-lg py-1 text-sm ${
+                            isDark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setMenuFor(null); setEditingFor(s.session_id); setEditingTitle(s.label || '') }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                          >✏️ 修改标题</button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); saveSessionToNote(s.session_id) }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+                          >📝 保存到笔记</button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setMenuFor(null); deleteSession(s.session_id) }}
+                            className="w-full text-left px-3 py-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 cursor-pointer"
+                          >🗑️ 删除会话</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
             ))}
             {sessions.length === 0 && (
@@ -607,19 +1336,39 @@ function App() {
       </aside>
 
       {/* 主聊天区 */}
-      <div className={`flex flex-col flex-1 ${isDark ? "bg-gray-950 text-gray-100" : "bg-white text-gray-800"}`}>
+      <div className={`flex flex-col flex-1 ${
+        isDark
+          ? "bg-gray-950 text-gray-100"
+          : chatMode === 'interview'
+            ? "bg-gradient-to-br from-purple-50 via-white to-indigo-50 text-gray-800"
+            : "bg-white text-gray-800"
+      }`}>
       {/* 顶栏 */}
-      <header className={`shrink-0 border-b px-4 py-3 ${isDark ? "border-gray-800" : "border-gray-200"}`}>
+      <header className={`shrink-0 border-b px-4 py-3 ${isDark ? "border-gray-800" : chatMode === 'interview' ? "border-purple-200 bg-white/70" : "border-gray-200"}`}>
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowSidebar(!showSidebar)}
-              className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition cursor-pointer"
-              title={showSidebar ? "收起侧边栏" : "展开侧边栏"}>
-              {showSidebar ? "◁" : "▷"}
-            </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        isDark={isDark}
+        onClick={() => setShowSidebar(!showSidebar)}
+        title={showSidebar ? '隐藏侧边栏' : '显示侧边栏'}
+      >{showSidebar ? '⟨' : '⟩'}</Button>
             <h1 className={`text-lg font-semibold ${isDark ? "text-gray-100" : "text-gray-800"}`}>
-              AI Agent
+              {chatMode === 'interview' ? '🎯 模拟面试' : '智能个人助手'}
             </h1>
+            {chatMode === 'interview' && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? "bg-purple-900 text-purple-300" : "bg-purple-100 text-purple-700"}`}>面试官模式</span>
+            )}
+
+            {/* 回到入口 */}
+      <Button
+        variant="secondary"
+        size="sm"
+        isDark={isDark}
+        onClick={() => setPage('hub')}
+        title="返回功能入口"
+      >入口</Button>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative flex items-center gap-1">
@@ -645,16 +1394,13 @@ function App() {
                   </option>
                 ))}
               </select>
-              <button
-                onClick={() => setShowKeySettings(true)}
-                className={`text-xs rounded px-2 py-1 border cursor-pointer ${isDark ? "bg-gray-800 text-gray-200 border-gray-600" : "bg-gray-100 text-gray-700 border-gray-300"} hover:border-blue-500`}
-                title="模型密钥设置（每个用户可填自己的 key）"
-              >密钥</button>
-              {toast && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 whitespace-nowrap text-xs px-2 py-1 rounded shadow-lg bg-blue-600 text-white">
-                  {toast}
-                </div>
-              )}
+      <Button
+        variant="secondary"
+        size="sm"
+        isDark={isDark}
+        onClick={() => setShowKeySettings(true)}
+        title="模型密钥设置（每个用户可填自己的 key）"
+      >密钥</Button>
             </div>
 
             <span className="text-xs text-gray-400 hidden sm:inline">{MODEL_INFO[modelProvider]?.scene || ''}</span>
@@ -662,34 +1408,54 @@ function App() {
             {/* 用户信息 + 个人中心 + 退出 */}
             <span className="text-xs text-gray-400 font-mono hidden sm:inline">{username}</span>
             <span className="hidden">{userId}</span>
-            <button
-              onClick={() => { setPage("profile"); setTimeout(fetchProfile, 50) }}
-              className="text-xs text-gray-400 hover:text-blue-500 transition cursor-pointer"
-              title="个人中心"
-            >
-              个人中心
-            </button>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-gray-400 hover:text-red-500 transition cursor-pointer"
-              title="退出登录"
-            >
-              退出
-            </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        isDark={isDark}
+        onClick={() => { setPage('profile'); setTimeout(fetchProfile, 50) }}
+      >个人中心</Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        isDark={isDark}
+        onClick={handleLogout}
+      >退出</Button>
 
-            <button
-              onClick={() => setIsDark(!isDark)}
-              className={`text-xs px-2 py-1 rounded transition cursor-pointer ${isDark ? "text-yellow-400 hover:text-yellow-300" : "text-gray-400 hover:text-gray-600"}`}
-              title={isDark ? "切换到浅色" : "切换到深色"}
-            >
-              {isDark ? "☀️" : "🌙"}
-            </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        isDark={isDark}
+        onClick={() => setIsDark(!isDark)}
+        title="切换主题"
+      >{isDark ? '☀️' : '🌙'}</Button>
 
             {messages.length > 0 && (
-              <button onClick={() => setMessages([])}
-                className="text-xs text-gray-400 hover:text-red-500 transition cursor-pointer" title="清空对话">
-                清空
-              </button>
+        <Button
+          variant="danger"
+          size="sm"
+          isDark={isDark}
+          onClick={() => setMessages([])}
+        >🗑️ 清空消息</Button>
+            )}
+
+            {chatMode === 'interview' && messages.length > 0 && (
+        <Button
+          variant="secondary"
+          size="sm"
+          isDark={isDark}
+          onClick={handleSaveInterview}
+          disabled={savingInterview}
+        >{savingInterview ? '归档中...' : '📝 保存记录'}</Button>
+            )}
+
+            {chatMode === 'interview' && messages.length > 0 && (
+        <Button
+          variant="secondary"
+          size="sm"
+          isDark={isDark}
+          onClick={handleWeaknessProfile}
+          disabled={buildingWeakness}
+        >{buildingWeakness ? '生成中...' : '📊 薄弱点画像'}</Button>
             )}
           </div>
         </div>
@@ -699,12 +1465,26 @@ function App() {
       <main className="flex-1 overflow-y-auto px-4 py-6">
         <div className="max-w-3xl mx-auto space-y-4">
           {messages.length === 0 && !historyLoading && (
-            <div className={`flex flex-col items-center justify-center h-full mt-20 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-              <p className="text-4xl mb-4">🤖</p>
-              <p className="text-lg">开始对话吧</p>
-              <p className="text-sm mt-1">支持天气查询、数学计算、热榜查看等</p>
-              <p className="text-xs mt-2 opacity-60">顶部可切换模型：DeepSeek（通用）· 智谱（写作）· 千问（分析）· 零一万物（创意）</p>
-            </div>
+            chatMode === 'interview' ? (
+              <div className={`flex flex-col items-center justify-center h-full mt-20 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                <p className="text-4xl mb-4">🎯</p>
+                <p className="text-lg font-medium">模拟面试</p>
+                <p className="text-sm mt-2">基于你的 Obsidian 疑难总结出题，逐题考你、听你回答、给反馈</p>
+                <div className="mt-4 text-xs space-y-1 opacity-60">
+                  <p>试试说：「面试我 Python 并发」「考考我面向对象」「模拟面试」</p>
+                </div>
+              </div>
+            ) : (
+              <div className={`flex flex-col items-center justify-center h-full mt-20 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                <p className="text-4xl mb-4">🧠</p>
+                <p className="text-lg font-medium">我是你的智能个人助手</p>
+                <p className="text-sm mt-2">已连接你的 Obsidian 笔记库，可以直接问我笔记里的内容</p>
+                <div className="mt-4 text-xs space-y-1 opacity-60">
+                  <p>试试问：「我最近学了什么」「整理一下我的AI学习笔记」「项目笔记里有哪些内容」</p>
+                  <p className="mt-2">也可查天气、算数学、看热榜、搜网页。</p>
+                </div>
+              </div>
+            )
           )}
 
           {historyLoading && (
@@ -715,17 +1495,33 @@ function App() {
 
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`group max-w-[75%] rounded-2xl px-4 py-2.5 whitespace-pre-wrap leading-relaxed ${
+              <div className={`group max-w-[75%] rounded-2xl px-4 py-2.5 leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-md'
-                  : `bg-gray-100 text-gray-800 rounded-bl-md ${isDark ? "!bg-gray-800 !text-gray-100" : ""}`
+                  ? 'bg-blue-600 text-white rounded-br-md whitespace-pre-wrap'
+                  : chatMode === 'interview'
+                    ? `bg-purple-100 text-gray-800 rounded-bl-md whitespace-normal ${isDark ? "!bg-purple-900/60 !text-gray-100" : ""}`
+                    : `bg-gray-100 text-gray-800 rounded-bl-md whitespace-normal ${isDark ? "!bg-gray-800 !text-gray-100" : ""}`
               }`}>
                 <div className="relative">
-                  {msg.content}
-                  <button
-                    onClick={() => navigator.clipboard.writeText(msg.content)}
-                    className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition text-xs bg-gray-300 hover:bg-gray-400 text-gray-700 rounded px-1.5 py-0.5 cursor-pointer"
-                    title="复制">复制</button>
+                  {msg.role === 'user' ? (
+                    msg.content
+                  ) : (
+                    <div className="markdown-body">
+                      <Markdown content={msg.content} />
+                    </div>
+                  )}
+                  <div className="absolute -top-1 -right-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                    {msg.role === 'assistant' && chatMode === 'workspace' && (
+                      <button
+                        onClick={() => saveAsNote(msg.content)}
+                        className="text-xs bg-teal-500 hover:bg-teal-400 text-white rounded px-1.5 py-0.5 cursor-pointer"
+                        title="存为 Obsidian 笔记">存笔记</button>
+                    )}
+                    <button
+                      onClick={() => navigator.clipboard.writeText(msg.content)}
+                      className="text-xs bg-gray-300 hover:bg-gray-400 text-gray-700 rounded px-1.5 py-0.5 cursor-pointer"
+                      title="复制">复制</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -753,15 +1549,19 @@ function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入消息..."
+            placeholder={chatMode === 'interview' ? "输入面试主题，如「Python 并发」..." : "输入消息..."}
             rows={1}
             className={`flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${isDark ? "border-gray-700 bg-gray-900 text-gray-100 placeholder-gray-500" : "border-gray-300 bg-white text-gray-800 placeholder-gray-400"}`}
           />
-          <button
+          <Button
+            type="button"
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
-          >发送</button>
+            variant="primary"
+            size="md"
+            isDark={isDark}
+            className="shrink-0 px-4 py-2.5 text-sm font-medium"
+          >发送</Button>
         </div>
       </footer>
 

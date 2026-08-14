@@ -4,21 +4,24 @@ index_documents()  加载 → 切片 → 向量化 → 存储
 query()            检索 → Prompt → DeepSeek → 答案
 """
 
-from langchain_core.prompts import ChatPromptTemplate
+import hashlib
+import re
+import threading
+from pathlib import Path
+
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI
 
-import hashlib
-import threading
-from pathlib import Path
-from .config import config
-from .loader import load_directory, is_path_excluded
-from .chunker import Chunker
-from .vector_store import get_vector_store
-from .retriever import get_retriever
-from config import OBSIDIAN_VAULT_DIR, OBSIDIAN_COLLECTION, OBSIDIAN_EXCLUDE
+from config import OBSIDIAN_COLLECTION, OBSIDIAN_EXCLUDE, OBSIDIAN_VAULT_DIR
 from utils.logger import get_logger
+
+from .chunker import Chunker
+from .config import config
+from .loader import is_path_excluded, load_directory
+from .retriever import get_retriever
+from .vector_store import get_vector_store
 
 logger = get_logger(__name__)
 
@@ -36,8 +39,11 @@ RAG_PROMPT = ChatPromptTemplate.from_messages([
         "你是一个基于知识库的智能助手。请严格根据以下\"上下文\"中的信息来回答问题。\n"
         "要求：\n"
         "1. 如果上下文中有相关答案，用简洁的中文回答\n"
-        "2. 如果上下文中没有相关信息，请明确说\"知识库中没有相关信息\"，不要编造\n"
-        "3. 回答时不要提及\"根据上下文\"、\"根据提供的资料\"等字样，直接给出答案"
+        "2. 如果上下文与问题不严格匹配但有任何相关内容，请把相关内容如实展示给用户，"
+        "并说明\"你的笔记里记录的是 X（而非你问的 Y），是否需要我进一步补充\"——"
+        "切勿直接说\"知识库没有\"就结束，也不要凭空编造\n"
+        "3. 只有在上下文完全无关时，才明确说\"知识库中没有相关信息\"，且不要编造\n"
+        "4. 回答时不要提及\"根据上下文\"、\"根据提供的资料\"等字样，直接给出答案"
     )),
     ("human", (
         "上下文：\n"
@@ -115,7 +121,7 @@ _chain = None
 
 
 def query(question: str) -> str:
-    """RAG 查询：检索 → DeepSeek 生成自然语言答案
+    """RAG 查询：检索 → DeepSeek 生成自然语言答案（同步版）
 
     Args:
         question: 用户问题
@@ -144,6 +150,16 @@ def query(question: str) -> str:
     except Exception as e:
         logger.error("RAG 生成失败: %s", e)
         return f"抱歉，处理您的问题时出错了：{e}"
+
+
+async def query_async(question: str) -> str:
+    """RAG 查询（异步版，Agent.arun 使用）。
+
+    Chroma 检索与 LangChain chain.invoke 均为同步实现（无官方 async），
+    故用 asyncio.to_thread 放进线程池，避免阻塞事件循环。
+    """
+    import asyncio
+    return await asyncio.to_thread(query, question)
 
 
 # ═══════════════════════════════════════════
@@ -242,7 +258,7 @@ def _index_obsidian_impl(force: bool = False) -> dict:
     exist_meta = existing.get("metadatas", []) or []
     old_by_doc: dict[str, list] = {}
     old_mtime: dict[str, float] = {}
-    for _id, meta in zip(exist_ids, exist_meta):
+    for _id, meta in zip(exist_ids, exist_meta, strict=False):
         doc_id = meta.get("doc_id")
         if not doc_id:
             continue
@@ -277,33 +293,195 @@ def _index_obsidian_impl(force: bool = False) -> dict:
     return stats
 
 
-def query_obsidian(question: str) -> str:
-    """在 Obsidian 独立 collection 上做 RAG 语义检索并生成答案。
+# ═══════════════════════════════════════════
+#  关键词兜底：弥补 embedding（all-MiniLM-L6-v2 英文优化）对中文/短查询召回率低
+# ═══════════════════════════════════════════
 
+def _extract_keywords(text: str) -> list:
+    """提取中英文关键词（去停用词），用于内容弱匹配。"""
+    text = (text or "").lower()
+    tokens = re.findall(r"[a-z]{2,}|[\u4e00-\u9fa5]{2,}", text)
+    stop = {
+        "我们", "你们", "他们", "自己", "什么", "怎么", "如何", "为什么", "哪些", "这个",
+        "那个", "这些", "那些", "已经", "可以", "应该", "需要", "知道", "想要", "希望",
+        "目前", "没有", "不是", "就是", "还是", "并且", "或者", "关于", "对于", "学习",
+        "过程", "遇到", "遇到过", "笔记", "内容", "直接", "记录", "担心", "试试", "告诉",
+        "请问", "想问", "我想", "我的", "你的", "有没有", "一下", "一些", "之类", "让我",
+        "看看", "帮我", "里面", "它们", "她们", "您",
+    }
+    return [t for t in tokens if t not in stop and len(t) >= 2]
+
+
+def _title_overlap(query: str, title: str) -> int:
+    """计算 query 与标题字面重叠度（基于 2~3 字中文/英文 n-gram 命中数）。
+
+    不依赖分词库，纯子串匹配——对"提问词"命中"笔记标题"这种小 vault 场景非常有效。
+    """
+    q = re.sub(r"\s+", "", query or "")
+    if not q or not title:
+        return 0
+    grams = set()
+    for n in (2, 3):
+        for i in range(len(q) - n + 1):
+            grams.add(q[i:i + n])
+    for w in re.findall(r"[a-z]{2,}", q.lower()):
+        grams.add(w)
+    return sum(1 for g in grams if g in title)
+
+
+def _keyword_fallback(question: str, vault: str, top_n: int = 5) -> list:
+    """关键词兜底：扫描 vault 笔记，按 query 与文件标题/内容的字面重叠度召回相关文件的全部 chunks。
+
+    用于弥补 embedding 模型（all-MiniLM-L6-v2，英文优化）对中文/短查询召回率低的问题：
+    当用户问"我学程序过程遇到哪些单词"时，semantic search 可能因 embedding 短板漏掉
+    《学程序过程遇到的单词释义》这篇笔记，但标题字面重叠会稳定命中它。
+    """
+    from .loader import load_directory
+
+    vault_path = Path(vault).resolve()
+    try:
+        docs = load_directory(vault)
+    except Exception:
+        return []
+
+    # 按文件分组（文件名即标题，整篇召回更有意义）
+    file_groups: dict = {}
+    for d in docs:
+        try:
+            rel = str(Path(d.metadata["source"]).resolve().relative_to(vault_path))
+        except Exception:
+            rel = Path(d.metadata["source"]).name
+        if is_path_excluded(rel, OBSIDIAN_EXCLUDE):
+            continue
+        file_groups.setdefault(rel, []).append(d)
+
+    keywords = _extract_keywords(question)
+    scored = []
+    for rel, chunks in file_groups.items():
+        title = Path(rel).stem
+        score = float(_title_overlap(question, title))        # 标题命中权重最高
+        if keywords:
+            content_blob = "\n".join(c.page_content for c in chunks)
+            for kw in keywords:
+                if kw in content_blob:
+                    score += 0.3                              # 内容弱匹配
+        if score > 0:
+            scored.append((score, chunks))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    result = []
+    for _, chunks in scored[:top_n]:
+        result.extend(chunks)
+    return result
+
+
+def get_vault_metadata() -> dict:
+    """扫描 Obsidian vault 元数据：笔记数量、文件夹结构、最近修改文件。
+    供 Agent 构建 system prompt 时注入，让 LLM 知道笔记库有「什么话题」。
+    不读取文件内容（隐私安全），仅统计文件名/路径/mtime。
+    """
+    vault = OBSIDIAN_VAULT_DIR
+    result = {
+        "configured": bool(vault and Path(vault).exists()),
+        "vault_path": vault or "",
+        "note_count": 0,
+        "folders": [],
+        "recent_notes": [],
+    }
+    if not result["configured"]:
+        return result
+    vault_path = Path(vault).resolve()
+    try:
+        all_md = []
+        for f in vault_path.rglob("*.md"):
+            rel = str(f.relative_to(vault_path))
+            if is_path_excluded(rel, OBSIDIAN_EXCLUDE) or f.name.startswith("."):
+                continue
+            all_md.append(f)
+        result["note_count"] = len(all_md)
+        # 文件夹（去重、排序）
+        folders = sorted(set(
+            str(f.parent.relative_to(vault_path)) if str(f.parent.relative_to(vault_path)) != "." else "根目录"
+            for f in all_md
+        ))
+        result["folders"] = folders
+        # 最近修改的笔记（最多 8 篇）
+        recent = sorted(all_md, key=lambda f: f.stat().st_mtime, reverse=True)[:8]
+        result["recent_notes"] = [
+            {
+                "name": f.stem,
+                "folder": str(f.parent.relative_to(vault_path)) if str(f.parent.relative_to(vault_path)) != "." else "根目录",
+                "mtime": f.stat().st_mtime,
+            }
+            for f in recent
+        ]
+    except Exception as e:
+        logger.warning("扫描 vault 元数据失败: %s", e)
+        result["error"] = str(e)
+    return result
+
+
+# Obsidian RAG chain 缓存（避免每次 query 都新建 ChatOpenAI）
+_obsidian_chain = None
+_obsidian_llm = None
+
+
+def query_obsidian(question: str, k: int | None = None) -> str:
+    """在 Obsidian 独立 collection 上做 RAG 语义检索并生成答案（同步版）。
+
+    检索策略：语义检索（embedding）为主 + 关键词兜底（标题/内容字面重叠）补充，
+    两者合并去重后送 LLM，避免中文短查询因 embedding 短板漏掉明显相关的笔记。
     注意：被排除清单过滤的文件不会进入向量库，因此检索到的内容均不含隐私文件。
     """
+    global _obsidian_chain, _obsidian_llm
     from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 
     store = get_vector_store(OBSIDIAN_COLLECTION)
     if store.count() == 0:
         return "Obsidian 知识库尚未索引，请先调用 POST /obsidian/index 进行索引。"
 
-    docs = store.search(question, k=config.RETRIEVE_TOP_K)
+    # 1. 语义检索为主
+    semantic_docs = store.search(question, k=k or config.RETRIEVE_TOP_K)
+
+    # 2. 关键词兜底：扫描 vault 标题/内容与 query 字面重叠（弥补 embedding 中文短板）
+    keyword_docs = _keyword_fallback(question, OBSIDIAN_VAULT_DIR)
+
+    # 3. 合并去重（按内容），semantic 优先
+    seen = set()
+    docs = []
+    for d in (*semantic_docs, *keyword_docs):
+        key = d.page_content.strip()
+        if key and key not in seen:
+            seen.add(key)
+            docs.append(d)
+
     if not docs:
         return "（Obsidian 中未找到相关内容）"
 
     context = _format_context(docs)
-    llm = ChatOpenAI(
-        model="deepseek-chat",
-        api_key=DEEPSEEK_API_KEY,
-        base_url=DEEPSEEK_BASE_URL,
-        temperature=0.3,
-    )
+    if _obsidian_llm is None:
+        _obsidian_llm = ChatOpenAI(
+            model="deepseek-chat",
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_BASE_URL,
+            temperature=0.3,
+        )
+    if _obsidian_chain is None:
+        _obsidian_chain = RAG_PROMPT | _obsidian_llm | StrOutputParser()
     try:
-        answer = (RAG_PROMPT | llm | StrOutputParser()).invoke(
+        answer = _obsidian_chain.invoke(
             {"context": context, "question": question}
         )
         return answer
     except Exception as e:
         logger.error("Obsidian RAG 生成失败: %s", e)
         return f"抱歉，处理您的问题时出错了：{e}"
+
+
+async def query_obsidian_async(question: str, k: int | None = None) -> str:
+    """在 Obsidian 独立 collection 上做 RAG 检索并生成答案（异步版，Agent.arun 使用）。
+
+    与 query_obsidian 逻辑一致；Chroma/LCEL 均为同步实现，用 asyncio.to_thread 放入线程池。
+    """
+    import asyncio
+    return await asyncio.to_thread(query_obsidian, question, k)
