@@ -298,9 +298,19 @@ def _index_obsidian_impl(force: bool = False) -> dict:
 # ═══════════════════════════════════════════
 
 def _extract_keywords(text: str) -> list:
-    """提取中英文关键词（去停用词），用于内容弱匹配。"""
+    """提取中英文关键词（去停用词），用于内容弱匹配。
+
+    中文处理：连续中文段按 2/3/4 字 n-gram 滑窗切分，而非整体作单个 token。
+    修复漏检：问"输入字体突然变成繁体字怎么切换回来"时，整段 15 字无法与笔记
+    内容"变成繁体字：ctrl+shift+f"子串匹配；n-gram 后"繁体字""切换"等词可命中。
+    """
     text = (text or "").lower()
-    tokens = re.findall(r"[a-z]{2,}|[\u4e00-\u9fa5]{2,}", text)
+    tokens = re.findall(r"[a-z]{2,}", text)
+    for seg in re.findall(r"[\u4e00-\u9fa5]+", text):
+        n = len(seg)
+        for size in (4, 3, 2):
+            if n >= size:
+                tokens.extend(seg[i:i + size] for i in range(n - size + 1))
     stop = {
         "我们", "你们", "他们", "自己", "什么", "怎么", "如何", "为什么", "哪些", "这个",
         "那个", "这些", "那些", "已经", "可以", "应该", "需要", "知道", "想要", "希望",
@@ -308,8 +318,17 @@ def _extract_keywords(text: str) -> list:
         "过程", "遇到", "遇到过", "笔记", "内容", "直接", "记录", "担心", "试试", "告诉",
         "请问", "想问", "我想", "我的", "你的", "有没有", "一下", "一些", "之类", "让我",
         "看看", "帮我", "里面", "它们", "她们", "您",
+        "输入", "字体", "变成", "回来", "突然", "请问", "帮我", "一下", "哪些",
     }
-    return [t for t in tokens if t not in stop and len(t) >= 2]
+    seen = set()
+    out = []
+    for t in tokens:
+        if t in stop or len(t) < 2:
+            continue
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
 
 
 def _title_overlap(query: str, title: str) -> int:
@@ -362,9 +381,9 @@ def _keyword_fallback(question: str, vault: str, top_n: int = 5) -> list:
         score = float(_title_overlap(question, title))        # 标题命中权重最高
         if keywords:
             content_blob = "\n".join(c.page_content for c in chunks)
-            for kw in keywords:
-                if kw in content_blob:
-                    score += 0.3                              # 内容弱匹配
+            hits = sum(1 for kw in keywords if kw in content_blob)
+            if hits:
+                score += min(0.3 * hits, 1.5)                 # 内容弱匹配：命中数加权（n-gram 后多词命中拉开差距）
         if score > 0:
             scored.append((score, chunks))
 

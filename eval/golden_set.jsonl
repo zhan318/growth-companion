@@ -1,0 +1,25 @@
+{"question": "快速排序的代码实现是怎么写的？", "expected_docs": ["十大排序/快速排序.md"], "answer_points": ["快速排序使用分治思想，选基准 pivot，将数组分为小于和大于基准的两部分，递归排序"], "category": "direct", "difficulty": "easy"}
+{"question": "十大经典排序算法都有哪些？", "expected_docs": ["十大排序/十大经典排序算法.md"], "answer_points": ["列出十大排序：冒泡、选择、插入、希尔、归并、快速、堆、计数、桶、基数"], "category": "direct", "difficulty": "easy"}
+{"question": "堆排序的原理是什么？", "expected_docs": ["十大排序/堆排序.md"], "answer_points": ["堆排序基于二叉堆，建堆后不断取出堆顶与末尾交换，再调整堆"], "category": "direct", "difficulty": "easy"}
+{"question": "Python 中 is 和 == 有什么区别？", "expected_docs": ["AI学习/python学习.md"], "answer_points": ["is 比较对象身份（内存地址），== 比较值；数值比较用 ==，is 只用于 None/单例"], "category": "direct", "difficulty": "easy"}
+{"question": "Python 的类方法、静态方法、实例方法有什么区别？", "expected_docs": ["AI学习/python学习.md"], "answer_points": ["实例方法 self 接收实例；类方法 @classmethod 接收 cls；静态方法 @staticmethod 不接收 self/cls"], "category": "direct", "difficulty": "easy"}
+{"question": "零基础学 Python 有哪些学习资源？", "expected_docs": ["AI学习/python学习.md"], "answer_points": ["互动版 learn-py.org、文档版 walter201230.github.io/Python、exercism、Python 官方文档"], "category": "direct", "difficulty": "easy"}
+{"question": "学程序过程中遇到单词 self 是什么意思？", "expected_docs": ["外语学习/英语学习/学程序过程遇到的单词释义.md"], "answer_points": ["self 意思是自己"], "category": "direct", "difficulty": "easy"}
+{"question": "输入字体突然变成繁体字怎么切换回来？", "expected_docs": ["电脑遇到的小问题.md"], "answer_points": ["ctrl+shift+f 切换简体"], "category": "direct", "difficulty": "easy"}
+{"question": "知识库的 embedding 用的什么模型？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-项目架构.md"], "answer_points": ["ChromaDB 内置 all-MiniLM-L6-v2，本地 ONNX 推理"], "category": "direct", "difficulty": "medium"}
+{"question": "Agent 项目的模拟面试功能是怎么工作的？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-项目架构.md"], "answer_points": ["面试模式注入面试官引导，按主题出题，用户回答后 LLM 点评，可归档到 vault"], "category": "direct", "difficulty": "medium"}
+{"question": "我的 Agent 项目在并发性能上做了哪些优化？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-技术难点与取舍.md", "AI-Agent项目/智能个人助手/智能个人助手-性能测试报告.md"], "answer_points": ["全链路异步化（30 并发吞吐 +128%）、SQLite WAL + 批量写入、Agent 池 LRU 上限管理"], "category": "reasoning", "difficulty": "hard"}
+{"question": "项目里是怎么保证知识库隐私安全的？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-技术难点与取舍.md", "AI-Agent项目/智能个人助手/智能个人助手-项目架构.md"], "answer_points": ["本地 embedding 笔记不出本机、OBSIDIAN_EXCLUDE 排除清单从索引端过滤隐私文件、独立 collection"], "category": "reasoning", "difficulty": "medium"}
+{"question": "为什么选择本地 embedding 而不是调用云端 API？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-技术难点与取舍.md"], "answer_points": ["隐私考虑：笔记内容不出本机；可切换 DeepSeek API 但需显式配置"], "category": "reasoning", "difficulty": "medium"}
+{"question": "RAG 检索效果不好应该怎么排查和优化？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-技术难点与取舍.md", "AI-Agent项目/智能个人助手/智能个人助手-简历描述.md"], "answer_points": ["中文 embedding 召回低时加关键词兜底（标题 n-gram + 内容命中）、调大 RETRIEVE_TOP_K、分层评测定位瓶颈"], "category": "reasoning", "difficulty": "hard"}
+{"question": "项目的整体架构和技术栈是什么？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-项目架构.md"], "answer_points": ["React+TS+Vite 前端、FastAPI 后端、DeepSeek LLM、LangChain+ChromaDB RAG、SQLite 存储、MCP 工具接入"], "category": "cross", "difficulty": "medium"}
+{"question": "我的项目有哪些性能测试数据？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-性能测试报告.md"], "answer_points": ["前端首屏 0.33s、生产 bundle 393KB gzip 133KB、异步化后 30 并发提升、真打 DeepSeek 延迟 8-19s"], "category": "cross", "difficulty": "hard"}
+{"question": "我的项目有什么亮点可以写进简历？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-简历描述.md"], "answer_points": ["中文 RAG 关键词兜底、三层记忆、ReAct 安全可控、AST 白名单求值器、pytest 58+ 用例与 CI"], "category": "cross", "difficulty": "medium"}
+{"question": "中文场景下 RAG 为什么召回率低？我做了什么改进？", "expected_docs": ["AI-Agent项目/智能个人助手/智能个人助手-简历描述.md", "AI-Agent项目/智能个人助手/智能个人助手-技术难点与取舍.md"], "answer_points": ["all-MiniLM-L6-v2 英文优化对中文偏差大；关键词兜底 + 标题重叠匹配 + 调大 top-k"], "category": "cross", "difficulty": "hard"}
+{"question": "归并排序的时间复杂度是多少？", "expected_docs": ["十大排序/归并排序.md"], "answer_points": ["归并排序时间复杂度 O(n log n)"], "category": "direct", "difficulty": "easy"}
+{"question": "agent 学习路线应该怎么规划？", "expected_docs": ["AI学习/agent学习路线与途径.md"], "answer_points": ["按知识库记录的 agent 学习路线与途径规划"], "category": "direct", "difficulty": "medium"}
+{"question": "美联储加息对中国股市有什么影响？", "expected_docs": [], "answer_points": ["知识库中没有相关信息，不应编造，应如实说明"], "category": "not_in_kb", "difficulty": "medium"}
+{"question": "2026 年世界杯冠军是哪个队？", "expected_docs": [], "answer_points": ["知识库中没有相关信息，不应编造"], "category": "not_in_kb", "difficulty": "easy"}
+{"question": "帮我推荐一款适合新手的咖啡机", "expected_docs": [], "answer_points": ["知识库中没有相关信息，不应编造"], "category": "not_in_kb", "difficulty": "easy"}
+{"question": "帮我写一个 Django 博客项目", "expected_docs": [], "answer_points": ["知识库没有 Django 相关内容，不应凭空编造代码，可提示知识库范围"], "category": "not_in_kb", "difficulty": "medium"}
+{"question": "英语单词 yield 在编程里是什么意思？", "expected_docs": ["外语学习/英语学习/学程序过程遇到的单词释义.md"], "answer_points": ["yield 意思是产生，在 Python 中用于生成器"], "category": "direct", "difficulty": "medium"}

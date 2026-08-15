@@ -38,3 +38,4 @@ nul
 
 # WorkBuddy 工作目录（私有记忆与运行时数据，不进版本库）
 .workbuddy/
+eval/reports/answers.jsonl
