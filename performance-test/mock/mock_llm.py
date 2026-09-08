@@ -68,7 +68,7 @@ def _route(message: str) -> list[dict]:
 def _mock_answer(message: str) -> str:
     """直接回答（不调用工具）时的 mock 回复。"""
     if any(k in message for k in ["你好", "hi", "hello", "嗨"]):
-        return "你好！我是智能个人助手，有什么可以帮你的？"
+        return "你好！我是成长智伴，有什么可以帮你的？"
     return (
         "这是 mock LLM 的回复。你的问题：「" + message + "」\n"
         "（当前处于性能测试模式，LLM 由本地 mock 服务替代。）"
@@ -90,7 +90,7 @@ def _build_response(message: str, has_tool_result: bool) -> dict:
         "id": _build_chunk_id(),
         "object": "chat.completion",
         "created": now,
-        "model": os.getenv("MOCK_LLM_MODEL", "deepseek-chat"),
+        "model": os.getenv("MOCK_LLM_MODEL", "deepseek-v4-flash"),
         "choices": [],
         "usage": {"prompt_tokens": 256, "completion_tokens": 128, "total_tokens": 384},
     }

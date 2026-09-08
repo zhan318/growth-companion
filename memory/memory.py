@@ -14,6 +14,9 @@ logger = get_logger(__name__)
 # JWT 配置
 _JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
 _JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+# JWT_SECRET 是否来自环境变量。为 False 时说明走了「每次启动随机生成」的兜底，
+# 重启服务后旧 token 全部失效（前端会 401）。供 startup 校验读取。
+JWT_SECRET_CONFIGURED = bool(os.getenv("JWT_SECRET"))
 
 class Memory:
     def __init__(self, db_path: str = None):
@@ -116,7 +119,7 @@ class Memory:
                 CREATE TABLE IF NOT EXISTS user_llm_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
-                    provider TEXT NOT NULL,           -- deepseek | glm | qwen | yi
+                    provider TEXT NOT NULL,           -- deepseek | glm | qwen
                     api_key TEXT NOT NULL,
                     base_url TEXT DEFAULT '',
                     model TEXT DEFAULT '',
@@ -572,7 +575,7 @@ class Memory:
                          base_url: str = "", model: str = "") -> bool:
         """保存（upsert）某用户的某厂商 LLM 密钥"""
         provider = (provider or "").lower().strip()
-        if provider not in ("deepseek", "glm", "qwen", "yi"):
+        if provider not in ("deepseek", "glm", "qwen"):
             return False
         if not api_key or not api_key.strip():
             return False

@@ -1,4 +1,4 @@
-# 🧠 智能个人助手 · Python + DeepSeek + React
+# 🧠 成长智伴 · Python + DeepSeek + React
 
 > 一个基于 **DeepSeek API**（兼容多种 OpenAI 格式模型）和 **FastAPI** 的知识库智能 Agent。具备用户认证、长期记忆、多会话隔离、RAG 知识库检索、自主工具调用（Function Calling）、流式输出，并附带 **React 聊天界面**。
 
@@ -19,7 +19,7 @@
 - 🧮 **安全数学计算**：AST 白名单求值器，替代危险的 `eval()`
 - 🧠 **双层记忆**：SQLite 持久化对话历史 + Chroma 向量记忆（语义检索补上下文）
 - 📚 **RAG 知识库**：上传文档（PDF/TXT/MD）→ 切片 → 向量化 → 检索 → 生成答案
-- 🌐 **多模型切换**：内置 DeepSeek，可切换智谱 GLM / 通义千问 / 零一万物（OpenAI 兼容）
+- 🌐 **多模型切换**：内置 DeepSeek，可切换智谱 GLM / 通义千问（OpenAI 兼容）
 - ⚡ **流式输出**：`/chat/stream` 基于 SSE 的打字机效果
 - 🌐 **RESTful API**：FastAPI 提供完整接口，Swagger 交互文档（`/docs`）
 - 🎨 **React 前端**：Vite + TypeScript + Tailwind CSS 聊天界面
@@ -31,7 +31,7 @@
 ## 🗂️ 项目结构
 
 ```
-智能个人助手/
+成长智伴/
 ├── api.py                      # FastAPI 服务入口（聊天 / 认证 / 知识库 / 用户接口）
 ├── app.py                      # 终端交互入口（CLI）
 ├── config.py                   # 全局配置：环境变量加载 + LLM 提供商配置
@@ -162,7 +162,7 @@ pytest
 # ── 主模型（DeepSeek）──
 DEEPSEEK_API_KEY=sk-xxx
 # DEEPSEEK_BASE_URL=https://api.deepseek.com
-# DEEPSEEK_MODEL=deepseek-chat
+# DEEPSEEK_MODEL=deepseek-v4-flash
 
 # ── 切换 LLM 提供商 ──
 # LLM_PROVIDER=deepseek          # deepseek | openai_compatible
@@ -209,7 +209,7 @@ DEEPSEEK_API_KEY=sk-xxx
 - `POST /chat` — 非流式对话，body：`{ message, session_id, model_provider }`
 - `POST /chat/stream` — 流式对话（SSE），返回 `data: {...}` 事件流
 
-`model_provider` 取值：`deepseek`（默认）| `glm` | `qwen` | `yi`。
+`model_provider` 取值：`deepseek`（默认）| `glm` | `qwen`。
 
 ### 知识库（需 Bearer）
 - `POST /knowledge/upload` — 上传文档（PDF/TXT/MD）
@@ -269,8 +269,8 @@ def get_news(topic: str) -> str:
 ## 🐳 Docker 部署
 
 ```bash
-docker build -t smart-personal-assistant .
-docker run -p 8000:8000 smart-personal-assistant
+docker build -t growth-companion .
+docker run -p 8000:8000 growth-companion
 ```
 
 也可参考项目根目录的 `render.yaml`（Render）与 `vercel.json`（Vercel）做平台部署。

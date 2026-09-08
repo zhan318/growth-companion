@@ -19,6 +19,7 @@ from utils.logger import get_logger
 
 from .chunker import Chunker
 from .config import config
+from .hybrid import invalidate_bm25
 from .loader import is_path_excluded, load_directory
 from .retriever import get_retriever
 from .vector_store import get_vector_store
@@ -73,10 +74,10 @@ def _format_context(docs):
 
 def _build_chain():
     """构建 LCEL Chain：retrieve → context → prompt → llm → output"""
-    from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
+    from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
 
     llm = ChatOpenAI(
-        model="deepseek-chat",
+        model=DEEPSEEK_MODEL,
         api_key=DEEPSEEK_API_KEY,
         base_url=DEEPSEEK_BASE_URL,
         temperature=0.3,
@@ -113,6 +114,7 @@ def index_documents(doc_dir: str | None = None) -> int:
     chunks = chunker.split_documents(docs)
     store = get_vector_store()
     store.add_documents(chunks)
+    invalidate_bm25(config.COLLECTION_NAME)
     logger.info("索引完成: %d 个切片", len(chunks))
     return len(chunks)
 
@@ -246,6 +248,7 @@ def _index_obsidian_impl(force: bool = False) -> dict:
             stats["indexed_files"] += 1
             stats["chunks"] += len(info["ids"])
         stats["status"] = "success"
+        invalidate_bm25(OBSIDIAN_COLLECTION)
         logger.info("Obsidian 全量索引完成: %d 文件 / %d 切片", stats["indexed_files"], stats["chunks"])
         return stats
 
@@ -286,6 +289,7 @@ def _index_obsidian_impl(force: bool = False) -> dict:
         stats["chunks"] += len(info["ids"])
 
     stats["status"] = "success"
+    invalidate_bm25(OBSIDIAN_COLLECTION)
     logger.info(
         "Obsidian 增量索引完成: 新增/更新 %d, 删除 %d, 跳过排除 %d",
         stats["updated"], stats["deleted"], stats["skipped_excluded"],
@@ -445,34 +449,42 @@ _obsidian_chain = None
 _obsidian_llm = None
 
 
-def query_obsidian(question: str, k: int | None = None) -> str:
-    """在 Obsidian 独立 collection 上做 RAG 语义检索并生成答案（同步版）。
+def retrieve_obsidian(question: str, k: int | None = None):
+    """Obsidian 检索公共路径：dense 语义检索 + BM25 稀疏检索 → RRF 融合。
 
-    检索策略：语义检索（embedding）为主 + 关键词兜底（标题/内容字面重叠）补充，
-    两者合并去重后送 LLM，避免中文短查询因 embedding 短板漏掉明显相关的笔记。
+    返回 (dense_docs, bm25_docs, merged_docs)，供 query 与 eval 共用，
+    避免多处重复检索逻辑（此前 query_obsidian / eval_retrieval / eval_generation 各写一份）。
+
+    dense_docs / bm25_docs 供评测分层统计（单独命中率 vs 融合命中率），
+    merged_docs 是最终送 LLM 的上下文。
+    """
+    from .hybrid import fuse_documents, get_bm25_retriever
+
+    store = get_vector_store(OBSIDIAN_COLLECTION)
+    top_k = k or config.RETRIEVE_TOP_K
+
+    dense_docs = store.search(question, k=top_k)
+    bm25_docs = get_bm25_retriever(store).search(question, k=top_k)
+    merged = fuse_documents(dense_docs, bm25_docs, top_n=top_k)
+    return dense_docs, bm25_docs, merged
+
+
+def query_obsidian(question: str, k: int | None = None) -> str:
+    """在 Obsidian 独立 collection 上做 RAG 检索并生成答案（同步版）。
+
+    检索策略：dense 语义检索 + BM25 稀疏检索，经 RRF 融合后送 LLM，
+    避免中文短查询因 embedding 短板漏掉明显相关的笔记。
     注意：被排除清单过滤的文件不会进入向量库，因此检索到的内容均不含隐私文件。
     """
     global _obsidian_chain, _obsidian_llm
-    from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
+    from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
 
     store = get_vector_store(OBSIDIAN_COLLECTION)
     if store.count() == 0:
         return "Obsidian 知识库尚未索引，请先调用 POST /obsidian/index 进行索引。"
 
-    # 1. 语义检索为主
-    semantic_docs = store.search(question, k=k or config.RETRIEVE_TOP_K)
-
-    # 2. 关键词兜底：扫描 vault 标题/内容与 query 字面重叠（弥补 embedding 中文短板）
-    keyword_docs = _keyword_fallback(question, OBSIDIAN_VAULT_DIR)
-
-    # 3. 合并去重（按内容），semantic 优先
-    seen = set()
-    docs = []
-    for d in (*semantic_docs, *keyword_docs):
-        key = d.page_content.strip()
-        if key and key not in seen:
-            seen.add(key)
-            docs.append(d)
+    # 混合检索：dense 语义检索 + BM25 稀疏检索 → RRF 融合
+    _, _, docs = retrieve_obsidian(question, k)
 
     if not docs:
         return "（Obsidian 中未找到相关内容）"
@@ -480,7 +492,7 @@ def query_obsidian(question: str, k: int | None = None) -> str:
     context = _format_context(docs)
     if _obsidian_llm is None:
         _obsidian_llm = ChatOpenAI(
-            model="deepseek-chat",
+            model=DEEPSEEK_MODEL,
             api_key=DEEPSEEK_API_KEY,
             base_url=DEEPSEEK_BASE_URL,
             temperature=0.3,

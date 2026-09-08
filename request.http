@@ -1,5 +1,5 @@
 # ============================================================
-# 智能个人助手 API 调试脚本（PyCharm HTTP Client）
+# 成长智伴 API 调试脚本（PyCharm HTTP Client）
 # 用法：用 PyCharm 打开本文件，点击每个请求左侧的绿色 ▶ 按钮即可发送
 # 前提：后端已在运行（python api.py，默认 http://localhost:8000）
 # 注意：知识库接口无需登录；/chat、/user/* 需要登录后带 Bearer token
@@ -66,7 +66,7 @@ client.global.set("auth_token", response.body.token);
 
 ### ─────────────────────────────────────────────
 ### 发起对话（自动带上登录得到的 auth_token）
-### model_provider 可选：deepseek / glm / qwen / yi
+### model_provider 可选：deepseek / glm / qwen
 ### ─────────────────────────────────────────────
 POST {{host}}/chat
 Content-Type: application/json

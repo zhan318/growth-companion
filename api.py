@@ -63,7 +63,7 @@ def error_response(status_code: int, code: str, message: str, detail: str = "") 
 
 
 app = FastAPI(
-    title="智能个人助手 API",
+    title="成长智伴 API",
     description="基于 DeepSeek + RAG 的智能 Agent 服务",
     version="1.0.0"
 )
@@ -77,6 +77,25 @@ async def lifespan(app: FastAPI):
     from config import OBSIDIAN_VAULT_DIR
 
     # ── startup ──
+    # 关键配置校验：JWT_SECRET 必须固定，否则重启后所有已签发 token 失效（前端 401）。
+    # 生产环境直接阻断启动，本地开发仅告警（避免本地随手跑时被卡死）。
+    from memory.memory import JWT_SECRET_CONFIGURED
+    if not JWT_SECRET_CONFIGURED:
+        _is_prod = bool(
+            os.getenv("RENDER") or os.getenv("VERCEL")
+            or os.getenv("ENVIRONMENT", "").lower() == "production"
+        )
+        if _is_prod:
+            raise RuntimeError(
+                "JWT_SECRET 未配置：生产环境必须显式设置 JWT_SECRET，"
+                "否则每次启动都会随机生成密钥，重启后所有登录 token 失效。"
+            )
+        logger.warning(
+            "JWT_SECRET 未在 .env 中配置，已使用随机生成的临时密钥；"
+            "重启服务后所有已签发 token 将失效（前端会 401）。"
+            "建议在 .env 固定 JWT_SECRET：python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+
     if OBSIDIAN_VAULT_DIR and Path(OBSIDIAN_VAULT_DIR).exists():
         try:
             from config import OBSIDIAN_COLLECTION
@@ -258,7 +277,7 @@ class ChatRequest(BaseModel):
 
 class LLMKeyRequest(BaseModel):
     """用户级 LLM 密钥：前端切换器用，每个用户可填自己的各厂商 key"""
-    provider: str                       # deepseek | glm | qwen | yi
+    provider: str                       # deepseek | glm | qwen
     api_key: str
     base_url: str = ""                  # 可选，缺省用该厂商默认 base_url
     model: str = ""                     # 可选，缺省用该厂商默认模型
@@ -814,7 +833,7 @@ async def root():
     from knowledge.pipeline import get_vault_metadata
     meta = get_vault_metadata()
     base = {
-        "message": "智能个人助手 服务运行中",
+        "message": "成长智伴 服务运行中",
         "docs": "/docs",
         "status": "active",
     }

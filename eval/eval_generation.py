@@ -29,9 +29,8 @@ sys.path.insert(0, str(ROOT))
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, OBSIDIAN_COLLECTION, OBSIDIAN_VAULT_DIR
-from knowledge.pipeline import RAG_PROMPT, _format_context, _keyword_fallback
-from knowledge.vector_store import get_vector_store
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
+from knowledge.pipeline import RAG_PROMPT, _format_context, retrieve_obsidian
 
 JUDGE_SYSTEM = (
     "你是一名严格的 RAG 系统评测裁判。你会收到【问题】【检索到的上下文】【模型答案】【期望答案要点】。\n"
@@ -56,7 +55,7 @@ JUDGE_HUMAN = (
 
 def build_llm():
     return ChatOpenAI(
-        model="deepseek-chat",
+        model=DEEPSEEK_MODEL,
         api_key=DEEPSEEK_API_KEY,
         base_url=DEEPSEEK_BASE_URL,
         temperature=0.2,
@@ -65,16 +64,8 @@ def build_llm():
 
 
 def retrieve_context(question: str, k: int = 3) -> str:
-    """与 query_obsidian 一致的检索合并路径，返回格式化 context"""
-    store = get_vector_store(OBSIDIAN_COLLECTION)
-    semantic = store.search(question, k=k)
-    keyword = _keyword_fallback(question, OBSIDIAN_VAULT_DIR, top_n=5)
-    seen, docs = set(), []
-    for d in (*semantic, *keyword):
-        key = d.page_content.strip()
-        if key and key not in seen:
-            seen.add(key)
-            docs.append(d)
+    """与 query_obsidian 一致的检索路径（dense + BM25 → RRF），返回格式化 context"""
+    _, _, docs = retrieve_obsidian(question, k)
     return _format_context(docs)
 
 

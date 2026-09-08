@@ -1,7 +1,7 @@
 [project]
-name = "smart-personal-assistant"
+name = "growth-companion"
 version = "1.0.0"
-description = "智能个人助手 — 基于 LLM + RAG 的个人知识 Agent"
+description = "成长智伴 — 基于 LLM + RAG 的个人成长智能体"
 requires-python = ">=3.11"
 
 [tool.ruff]

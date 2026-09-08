@@ -14,9 +14,6 @@ from config import (
     QWEN_API_KEY,
     QWEN_BASE_URL,
     QWEN_MODEL,
-    YI_API_KEY,
-    YI_BASE_URL,
-    YI_MODEL,
 )
 from utils.logger import get_logger
 
@@ -172,19 +169,6 @@ MODEL_PRESETS = {
         "api_key": QWEN_API_KEY,
         "default_base_url": QWEN_BASE_URL,
         "default_model": QWEN_MODEL,
-    },
-    "yi": {
-        "factory": lambda: OpenAICompatibleAdapter(
-            model_name=YI_MODEL,
-            api_key=YI_API_KEY,
-            base_url=YI_BASE_URL,
-            label="零一万物",
-        ),
-        "label": "零一万物",
-        "role": "头脑风暴",
-        "api_key": YI_API_KEY,
-        "default_base_url": YI_BASE_URL,
-        "default_model": YI_MODEL,
     },
 }
 

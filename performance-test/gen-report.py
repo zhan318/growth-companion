@@ -89,7 +89,7 @@ def main():
     lines = []
     A = lines.append
 
-    A("# 智能个人助手 · 工作台性能测试报告")
+    A("# 成长智伴 · 工作台性能测试报告")
     A("")
     A(f"> 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
     A("> 测试对象：工作台（hub 入口 → chat 页 → `/chat` Agent 链路）")

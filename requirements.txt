@@ -18,6 +18,10 @@ langchain-text-splitters>=0.3,<1.0
 # Vector store
 chromadb>=1.5,<2.0
 
+# Hybrid retrieval（BM25 稀疏检索 + RRF 融合）
+rank-bm25>=0.2.2
+jieba>=0.42.1
+
 # PDF loader
 pypdf>=5.0,<6.0
 
