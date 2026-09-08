@@ -30,6 +30,13 @@ const MBTI_DESC: Record<string, string> = {
   ENTJ: '强势果决，远见卓识，天生的统帅',
 }
 
+// ── 中央 welcome 页 3 个模式胶囊 ──
+const MODE_PILLS: Record<'workspace' | 'interview' | 'knowledge', { icon: string; label: string; subtitle: string }> = {
+  workspace: { icon: '💬', label: '日常对话',  subtitle: '问答、工具调用、查天气算数学' },
+  interview: { icon: '🎯', label: '模拟面试',  subtitle: '考试式出题，听你回答再给反馈' },
+  knowledge: { icon: '📚', label: '知识库',    subtitle: '优先引用 Obsidian 笔记回答' },
+}
+
 function App() {
   // ── 认证状态 ──
   const [token, setToken] = useState(() => localStorage.getItem('token') || '')
@@ -72,8 +79,14 @@ function App() {
   const [editingTitle, setEditingTitle] = useState('')
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  // 工作模式：工作台｜模拟面试
-  const [chatMode, setChatMode] = useState<'workspace' | 'interview'>('workspace')
+  // 工作模式：工作台｜模拟面试｜知识库（knowledge 走 hint 注入，后端 mode 仍映射为 workspace）
+  const [chatMode, setChatMode] = useState<'workspace' | 'interview' | 'knowledge'>('workspace')
+  // 输入区「回答风格偏好 chip」状态：3 个开关（默认：知识库开、其他关）
+  const [toolChips, setToolChips] = useState<{ deepThink: boolean; webSearch: boolean; knowledgeBase: boolean }>({
+    deepThink: false, webSearch: false, knowledgeBase: true,
+  })
+  // 右上头像菜单开合
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   // MBTI 测试状态
   const [mbtiStep, setMbtiStep] = useState(0)
   const [mbtiRole, setMbtiRole] = useState('')
@@ -654,11 +667,32 @@ function App() {
   }
 
   // ── 聊天操作 ──
+  // 把"知识库"模式和工具 chip 翻译成 system hint，注入到 message 前面（零后端改动）
+  const buildUserMessage = (raw: string): string => {
+    const hints: string[] = []
+    // 模式胶囊（中央 welcome 选的）→ 强制语义
+    if (chatMode === 'knowledge') {
+      hints.push('【请基于我的 Obsidian 知识库回答，直接引用笔记内容】')
+    } else if (chatMode === 'interview') {
+      hints.push('【这是模拟面试模式，按出题→倾听→点评节奏进行】')
+    }
+    // 工具能力 chip（输入区下方）→ 可叠加
+    if (toolChips.deepThink) hints.push('【允许多轮工具调用，逐步推理】')
+    if (toolChips.webSearch) hints.push('【允许调用联网搜索获取最新信息】')
+    if (toolChips.knowledgeBase) hints.push('【优先检索 Obsidian 知识库】')
+    return hints.length ? `${hints.join('\n')}\n\n${raw}` : raw
+  }
+
+  // 后端 /chat 接口只接 workspace | interview，knowledge 走 workspace（hint 承担语义）
+  const backendMode: 'workspace' | 'interview' = chatMode === 'interview' ? 'interview' : 'workspace'
+
   const sendMessage = async () => {
     const text = input.trim()
     if (!text || loading) return
 
     setInput('')
+    const finalMessage = buildUserMessage(text)
+    // 用户看到的消息仍是原文，hint 仅作为"额外上下文"传后端，不污染 UI
     setMessages((prev) => [
       ...prev,
       { role: 'user', content: text },
@@ -670,7 +704,7 @@ function App() {
       const res = await apiFetch(`${apiBase}/chat`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ message: text, session_id: sessionId, model_provider: modelProvider, mode: chatMode }),
+        body: JSON.stringify({ message: finalMessage, session_id: sessionId, model_provider: modelProvider, mode: backendMode }),
       })
 
       if (!res.ok) {
@@ -1339,124 +1373,117 @@ function App() {
       <div className={`flex flex-col flex-1 ${
         isDark
           ? "bg-gray-950 text-gray-100"
-          : chatMode === 'interview'
-            ? "bg-gradient-to-br from-purple-50 via-white to-indigo-50 text-gray-800"
-            : "bg-white text-gray-800"
+          : "bg-white text-gray-800"
       }`}>
-      {/* 顶栏 */}
-      <header className={`shrink-0 border-b px-4 py-3 ${isDark ? "border-gray-800" : chatMode === 'interview' ? "border-purple-200 bg-white/70" : "border-gray-200"}`}>
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        isDark={isDark}
-        onClick={() => setShowSidebar(!showSidebar)}
-        title={showSidebar ? '隐藏侧边栏' : '显示侧边栏'}
-      >{showSidebar ? '⟨' : '⟩'}</Button>
-            <h1 className={`text-lg font-semibold ${isDark ? "text-gray-100" : "text-gray-800"}`}>
-              {chatMode === 'interview' ? '🎯 模拟面试' : '智能个人助手'}
-            </h1>
-            {chatMode === 'interview' && (
-              <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? "bg-purple-900 text-purple-300" : "bg-purple-100 text-purple-700"}`}>面试官模式</span>
-            )}
-
-            {/* 回到入口 */}
-      <Button
-        variant="secondary"
-        size="sm"
-        isDark={isDark}
-        onClick={() => setPage('hub')}
-        title="返回功能入口"
-      >入口</Button>
+      {/* 顶栏：DeepSeek 风精简一行（折叠 + 标题 + 当前模式胶囊 + 3 操作图标 + 头像下拉菜单） */}
+      <header className={`shrink-0 border-b px-4 py-3 ${isDark ? "border-gray-800 bg-gray-950" : "border-gray-200"}`}>
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+          {/* 左：折叠 + 标题 + 当前模式胶囊 */}
+          <div className="flex items-center gap-3 min-w-0">
+            <Button
+              variant="ghost" size="sm" isDark={isDark}
+              onClick={() => setShowSidebar(!showSidebar)}
+              title={showSidebar ? '隐藏侧边栏' : '显示侧边栏'}
+            >{showSidebar ? '⟨' : '⟩'}</Button>
+            <span className={`text-base font-semibold whitespace-nowrap ${isDark ? "text-gray-100" : "text-gray-800"}`}>
+              成长智伴
+            </span>
+            {/* 当前模式 chip（点击下钻中央 welcome 重选） */}
+            <button
+              onClick={() => setMessages([])}
+              title="点击回到中央选择模式"
+              className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition ${isDark ? 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+            >
+              {MODE_PILLS[chatMode].icon} {MODE_PILLS[chatMode].label}
+            </button>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative flex items-center gap-1">
-              <select
-                value={modelProvider}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setModelProvider(val)
-                  if (!modelEffective[val]) {
-                    setToast(`${MODEL_INFO[val].label} 未配置密钥，将使用 DeepSeek 兜底回答`)
-                  } else {
-                    setToast(`已切换到 ${MODEL_INFO[val].label} · ${MODEL_INFO[val].role}`)
-                  }
-                }}
-                className={`text-xs rounded px-2 py-1 cursor-pointer ${isDark ? "bg-gray-800 text-gray-200 border-gray-600" : "bg-gray-100 text-gray-700 border-gray-300"} border`}
-                title="点击切换模型"
-              >
-                {Object.entries(MODEL_INFO).map(([key, info]) => (
-                  <option key={key} value={key}>
-                    {info.label} · {info.role}
-                    {configuredProviders.includes(key) ? " （你的密钥）" : ""}
-                    {modelEffective[key] === false ? " （兜底）" : ""}
-                  </option>
-                ))}
-              </select>
-      <Button
-        variant="secondary"
-        size="sm"
-        isDark={isDark}
-        onClick={() => setShowKeySettings(true)}
-        title="模型密钥设置（每个用户可填自己的 key）"
-      >密钥</Button>
+
+          {/* 右：3 个图标按钮 + 用户头像菜单 */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={() => setShowKeySettings(true)} title="模型密钥设置"
+              className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+            >🔑</button>
+            <button onClick={() => setPage('hub')} title="返回功能入口"
+              className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+            >🏠</button>
+            <button onClick={() => setIsDark(!isDark)} title="切换主题"
+              className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+            >{isDark ? '☀️' : '🌙'}</button>
+
+            {/* 用户头像（含点击下拉菜单：模型切换、个人中心、MBTI、看板、清空、面试归档、薄弱点、退出） */}
+            <div className="relative ml-1">
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold cursor-pointer transition ring-1 ${isDark ? 'bg-blue-500/30 text-blue-200 ring-blue-400/30 hover:bg-blue-500/50' : 'bg-blue-500 text-white ring-blue-300 hover:bg-blue-400'}`}
+                title={username || '账号'}
+              >{(username[0] || '?').toUpperCase()}</button>
+
+              {userMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+                  <div className={`absolute right-0 top-10 z-50 w-64 rounded-xl border shadow-xl py-1 text-sm ${isDark ? 'bg-gray-900 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}>
+                    <div className={`px-4 py-2.5 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                      <p className="text-xs opacity-60">已登录</p>
+                      <p className="font-medium truncate">{username || '匿名'}</p>
+                    </div>
+
+                    {/* 模型切换器 */}
+                    <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                      <p className="text-[11px] opacity-60 mb-1">当前模型</p>
+                      <select
+                        value={modelProvider}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setModelProvider(val)
+                          if (!modelEffective[val]) {
+                            setToast(`${MODEL_INFO[val].label} 未配置密钥，将使用 DeepSeek 兜底回答`)
+                          } else {
+                            setToast(`已切换到 ${MODEL_INFO[val].label} · ${MODEL_INFO[val].role}`)
+                          }
+                          setUserMenuOpen(false)
+                        }}
+                        className={`w-full text-xs rounded px-2 py-1.5 cursor-pointer border ${isDark ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 text-gray-700 border-gray-200"}`}
+                        title="点击切换模型"
+                      >
+                        {Object.entries(MODEL_INFO).map(([key, info]) => (
+                          <option key={key} value={key}>
+                            {info.label} · {info.role}
+                            {configuredProviders.includes(key) ? " ✓" : ""}
+                            {modelEffective[key] === false ? " (兜底)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button onClick={() => { setUserMenuOpen(false); setPage('profile'); setTimeout(fetchProfile, 50) }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">👤 个人中心</button>
+                    <button onClick={() => { setUserMenuOpen(false); setPage('mbti') }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">🧭 MBTI 测试</button>
+                    <button onClick={() => { setUserMenuOpen(false); setPage('dashboard'); fetchDashboard() }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">📊 数据看板</button>
+
+                    {messages.length > 0 && (
+                      <button onClick={() => { setMessages([]); setUserMenuOpen(false) }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">🗑️ 清空消息</button>
+                    )}
+
+                    {chatMode === 'interview' && messages.length > 0 && (
+                      <>
+                        <div className={`my-1 border-t ${isDark ? 'border-gray-800' : 'border-gray-100'}`} />
+                        <button onClick={() => { handleSaveInterview(); setUserMenuOpen(false) }} disabled={savingInterview}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer disabled:opacity-50">{savingInterview ? '归档中...' : '📝 保存面试记录'}</button>
+                        <button onClick={() => { handleWeaknessProfile(); setUserMenuOpen(false) }} disabled={buildingWeakness}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer disabled:opacity-50">{buildingWeakness ? '生成中...' : '📊 生成薄弱点画像'}</button>
+                      </>
+                    )}
+
+                    <div className={`my-1 border-t ${isDark ? 'border-gray-800' : 'border-gray-100'}`} />
+                    <button onClick={handleLogout}
+                      className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 cursor-pointer">🚪 退出登录</button>
+                  </div>
+                </>
+              )}
             </div>
-
-            <span className="text-xs text-gray-400 hidden sm:inline">{MODEL_INFO[modelProvider]?.scene || ''}</span>
-
-            {/* 用户信息 + 个人中心 + 退出 */}
-            <span className="text-xs text-gray-400 font-mono hidden sm:inline">{username}</span>
-            <span className="hidden">{userId}</span>
-      <Button
-        variant="ghost"
-        size="sm"
-        isDark={isDark}
-        onClick={() => { setPage('profile'); setTimeout(fetchProfile, 50) }}
-      >个人中心</Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        isDark={isDark}
-        onClick={handleLogout}
-      >退出</Button>
-
-      <Button
-        variant="ghost"
-        size="sm"
-        isDark={isDark}
-        onClick={() => setIsDark(!isDark)}
-        title="切换主题"
-      >{isDark ? '☀️' : '🌙'}</Button>
-
-            {messages.length > 0 && (
-        <Button
-          variant="danger"
-          size="sm"
-          isDark={isDark}
-          onClick={() => setMessages([])}
-        >🗑️ 清空消息</Button>
-            )}
-
-            {chatMode === 'interview' && messages.length > 0 && (
-        <Button
-          variant="secondary"
-          size="sm"
-          isDark={isDark}
-          onClick={handleSaveInterview}
-          disabled={savingInterview}
-        >{savingInterview ? '归档中...' : '📝 保存记录'}</Button>
-            )}
-
-            {chatMode === 'interview' && messages.length > 0 && (
-        <Button
-          variant="secondary"
-          size="sm"
-          isDark={isDark}
-          onClick={handleWeaknessProfile}
-          disabled={buildingWeakness}
-        >{buildingWeakness ? '生成中...' : '📊 薄弱点画像'}</Button>
-            )}
           </div>
         </div>
       </header>
@@ -1465,26 +1492,51 @@ function App() {
       <main className="flex-1 overflow-y-auto px-4 py-6">
         <div className="max-w-3xl mx-auto space-y-4">
           {messages.length === 0 && !historyLoading && (
-            chatMode === 'interview' ? (
-              <div className={`flex flex-col items-center justify-center h-full mt-20 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                <p className="text-4xl mb-4">🎯</p>
-                <p className="text-lg font-medium">模拟面试</p>
-                <p className="text-sm mt-2">基于你的 Obsidian 疑难总结出题，逐题考你、听你回答、给反馈</p>
-                <div className="mt-4 text-xs space-y-1 opacity-60">
-                  <p>试试说：「面试我 Python 并发」「考考我面向对象」「模拟面试」</p>
-                </div>
+            <div className="flex flex-col items-center justify-center h-full mt-10">
+              <p className={`text-2xl font-semibold mb-2 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+                今天想聊些什么？
+              </p>
+              <p className={`text-sm mb-6 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                选个模式开聊，随时再换
+              </p>
+              <div className="flex flex-wrap justify-center gap-3 max-w-2xl">
+                {(Object.keys(MODE_PILLS) as Array<keyof typeof MODE_PILLS>).map((m) => {
+                  const p = MODE_PILLS[m]
+                  const active = chatMode === m
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        if (m === 'interview') {
+                          // 切到 interview 触发早返到独立考试式组件
+                          setChatMode('interview')
+                          setMessages([])
+                        } else {
+                          setChatMode(m)
+                        }
+                      }}
+                      className={`flex flex-col items-start gap-1 px-5 py-4 rounded-2xl border-2 transition cursor-pointer min-w-[180px] ${
+                        active
+                          ? isDark
+                            ? 'border-blue-500 bg-blue-500/10'
+                            : 'border-blue-500 bg-blue-50'
+                          : isDark
+                            ? 'border-gray-700 hover:border-gray-500 bg-gray-900/40'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{p.icon}</span>
+                        <span className={`text-sm font-semibold ${isDark ? "text-gray-100" : "text-gray-800"}`}>{p.label}</span>
+                      </div>
+                      <p className={`text-[11px] text-left ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                        {p.subtitle}
+                      </p>
+                    </button>
+                  )
+                })}
               </div>
-            ) : (
-              <div className={`flex flex-col items-center justify-center h-full mt-20 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                <p className="text-4xl mb-4">🧠</p>
-                <p className="text-lg font-medium">我是你的智能个人助手</p>
-                <p className="text-sm mt-2">已连接你的 Obsidian 笔记库，可以直接问我笔记里的内容</p>
-                <div className="mt-4 text-xs space-y-1 opacity-60">
-                  <p>试试问：「我最近学了什么」「整理一下我的AI学习笔记」「项目笔记里有哪些内容」</p>
-                  <p className="mt-2">也可查天气、算数学、看热榜、搜网页。</p>
-                </div>
-              </div>
-            )
+            </div>
           )}
 
           {historyLoading && (
@@ -1497,10 +1549,8 @@ function App() {
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`group max-w-[75%] rounded-2xl px-4 py-2.5 leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-white rounded-br-md whitespace-pre-wrap'
-                  : chatMode === 'interview'
-                    ? `bg-purple-100 text-gray-800 rounded-bl-md whitespace-normal ${isDark ? "!bg-purple-900/60 !text-gray-100" : ""}`
-                    : `bg-gray-100 text-gray-800 rounded-bl-md whitespace-normal ${isDark ? "!bg-gray-800 !text-gray-100" : ""}`
+                  ? `bg-blue-600 text-white rounded-br-md whitespace-pre-wrap ${isDark ? "!bg-blue-500" : ""}`
+                  : `rounded-bl-md whitespace-normal ${isDark ? "!bg-gray-800 !text-gray-100" : "bg-gray-100 text-gray-800"}`
               }`}>
                 <div className="relative">
                   {msg.role === 'user' ? (
@@ -1542,26 +1592,72 @@ function App() {
         </div>
       </main>
 
-      {/* 输入区 */}
+      {/* 输入区（chip 行 + 输入框 + 附件 + 圆形发送） */}
       <footer className={`shrink-0 border-t px-4 py-3 ${isDark ? "border-gray-800 bg-gray-950" : "border-gray-200 bg-white"}`}>
-        <div className="max-w-3xl mx-auto flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={chatMode === 'interview' ? "输入面试主题，如「Python 并发」..." : "输入消息..."}
-            rows={1}
-            className={`flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${isDark ? "border-gray-700 bg-gray-900 text-gray-100 placeholder-gray-500" : "border-gray-300 bg-white text-gray-800 placeholder-gray-400"}`}
-          />
-          <Button
-            type="button"
-            onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            variant="primary"
-            size="md"
-            isDark={isDark}
-            className="shrink-0 px-4 py-2.5 text-sm font-medium"
-          >发送</Button>
+        <div className="max-w-3xl mx-auto space-y-2">
+          {/* 工具能力 chip 行（与 sendMessage.buildUserMessage 联动） */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {([
+              { key: 'deepThink',     icon: '🧠', label: '展开推理' },
+              { key: 'webSearch',     icon: '🌐', label: '联网辅助' },
+              { key: 'knowledgeBase', icon: '📚', label: '引用笔记' },
+            ] as const).map(({ key, icon, label }) => {
+              const on = (toolChips as any)[key] as boolean
+              return (
+                <button
+                  key={key}
+                  onClick={() => setToolChips((c) => ({ ...c, [key]: !on }))}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
+                    on
+                      ? isDark
+                        ? 'bg-blue-500/20 border-blue-400/50 text-blue-300'
+                        : 'bg-blue-50 border-blue-200 text-blue-700'
+                      : isDark
+                        ? 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                  title={on ? `已开启：${label}` : `点击开启：${label}`}
+                >
+                  <span>{icon}</span><span>{label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 输入行 */}
+          <div className={`flex items-end gap-2 rounded-2xl border px-3 py-2 transition ${isDark ? "border-gray-700 bg-gray-900 focus-within:border-blue-500" : "border-gray-300 bg-white focus-within:border-blue-500 focus-within:shadow-sm"}`}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                chatMode === 'knowledge' ? "向你的 Obsidian 笔记库提问…"
+                : "给成长智伴发条消息..."
+              }
+              rows={1}
+              className={`flex-1 resize-none bg-transparent border-0 px-1 py-1.5 text-sm outline-none ${isDark ? "text-gray-100 placeholder-gray-500" : "text-gray-800 placeholder-gray-400"}`}
+            />
+            {/* 附件（先占位，为后续支持文件附件预留 UI 锚点） */}
+            <button
+              type="button"
+              onClick={() => setToast('附件功能待后续版本支持')}
+              title="附件"
+              className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-500" : "hover:bg-gray-100 text-gray-400"}`}
+            >📎</button>
+            {/* 圆形发送按钮 */}
+            <button
+              type="button"
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              title={loading ? '生成中...' : '发送 (Enter)'}
+              className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition ${
+                loading || !input.trim()
+                  ? isDark ? "bg-gray-800 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-300 cursor-not-allowed"
+                  : isDark ? "bg-blue-500 hover:bg-blue-400 text-white" : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+              }`}
+            >↑</button>
+          </div>
+          <p className={`text-[11px] text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>Enter 发送 · Shift+Enter 换行</p>
         </div>
       </footer>
 
