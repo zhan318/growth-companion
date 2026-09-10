@@ -72,16 +72,35 @@ def _format_context(docs):
     return "\n\n".join(parts)
 
 
+def _resolve_default_provider() -> str:
+    """取当前实际生效的默认 provider（已考虑 key 是否配置）"""
+    from chatbot.chatbot import get_default_provider
+
+    return get_default_provider()
+
+
+def _build_llm(provider: str = None, temperature: float = 0.3) -> ChatOpenAI:
+    """按全项目默认 provider 构建 LangChain ChatOpenAI。
+
+    RAG 生成链路与聊天链路共用 config.LLM_PROVIDER 这一配置源，
+    避免「前端选了 GLM、知识库问答却仍调 DeepSeek」的割裂。
+    """
+    from chatbot.chatbot import MODEL_PRESETS, get_default_provider
+
+    provider = provider or get_default_provider()
+    preset = MODEL_PRESETS[provider]
+    logger.info("RAG 生成模型: %s (%s)", preset["label"], provider)
+    return ChatOpenAI(
+        model=preset["default_model"],
+        api_key=preset["api_key"],
+        base_url=preset["default_base_url"],
+        temperature=temperature,
+    )
+
+
 def _build_chain():
     """构建 LCEL Chain：retrieve → context → prompt → llm → output"""
-    from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
-
-    llm = ChatOpenAI(
-        model=DEEPSEEK_MODEL,
-        api_key=DEEPSEEK_API_KEY,
-        base_url=DEEPSEEK_BASE_URL,
-        temperature=0.3,
-    )
+    llm = _build_llm()
 
     retriever = get_retriever().get_langchain_retriever()
 
@@ -204,6 +223,8 @@ def _index_obsidian_impl(force: bool = False) -> dict:
         if is_path_excluded(rel, OBSIDIAN_EXCLUDE):
             skipped += 1
             continue
+        # 切片前先补全来源信息：Chunker 据此为每个 chunk 前置「标题 + 库内路径」
+        d.metadata["rel_path"] = rel
         kept.append(d)
     docs = kept
 
@@ -222,11 +243,10 @@ def _index_obsidian_impl(force: bool = False) -> dict:
     desired: dict[str, dict] = {}
     for d in chunks:
         src = Path(d.metadata["source"]).resolve()
-        rel = str(src.relative_to(vault_path))
+        rel = d.metadata["rel_path"]
         file_hash = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]
         mtime = src.stat().st_mtime
         d.metadata["doc_id"] = file_hash
-        d.metadata["rel_path"] = rel
         d.metadata["mtime"] = mtime
         info = desired.setdefault(file_hash, {"ids": [], "docs": [], "mtime": mtime})
         idx = len(info["ids"])
@@ -445,8 +465,10 @@ def get_vault_metadata() -> dict:
 
 
 # Obsidian RAG chain 缓存（避免每次 query 都新建 ChatOpenAI）
+# _obsidian_llm_provider 记录缓存 LLM 对应的 provider：默认 provider 变了就自动重建
 _obsidian_chain = None
 _obsidian_llm = None
+_obsidian_llm_provider = None
 
 
 def retrieve_obsidian(question: str, k: int | None = None):
@@ -476,8 +498,7 @@ def query_obsidian(question: str, k: int | None = None) -> str:
     避免中文短查询因 embedding 短板漏掉明显相关的笔记。
     注意：被排除清单过滤的文件不会进入向量库，因此检索到的内容均不含隐私文件。
     """
-    global _obsidian_chain, _obsidian_llm
-    from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    global _obsidian_chain, _obsidian_llm, _obsidian_llm_provider
 
     store = get_vector_store(OBSIDIAN_COLLECTION)
     if store.count() == 0:
@@ -490,13 +511,11 @@ def query_obsidian(question: str, k: int | None = None) -> str:
         return "（Obsidian 中未找到相关内容）"
 
     context = _format_context(docs)
-    if _obsidian_llm is None:
-        _obsidian_llm = ChatOpenAI(
-            model=DEEPSEEK_MODEL,
-            api_key=DEEPSEEK_API_KEY,
-            base_url=DEEPSEEK_BASE_URL,
-            temperature=0.3,
-        )
+    provider = _resolve_default_provider()
+    if _obsidian_llm is None or _obsidian_llm_provider != provider:
+        _obsidian_llm = _build_llm(provider)
+        _obsidian_llm_provider = provider
+        _obsidian_chain = None  # LLM 变了，chain 也要重建
     if _obsidian_chain is None:
         _obsidian_chain = RAG_PROMPT | _obsidian_llm | StrOutputParser()
     try:

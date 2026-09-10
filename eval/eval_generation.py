@@ -29,7 +29,6 @@ sys.path.insert(0, str(ROOT))
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 from knowledge.pipeline import RAG_PROMPT, _format_context, retrieve_obsidian
 
 JUDGE_SYSTEM = (
@@ -54,10 +53,16 @@ JUDGE_HUMAN = (
 
 
 def build_llm():
+    """构建评测用 judge 模型，跟随全项目默认 provider（config.LLM_PROVIDER）"""
+    from chatbot.chatbot import MODEL_PRESETS, get_default_provider
+
+    provider = get_default_provider()
+    preset = MODEL_PRESETS[provider]
+    print(f"评测 judge 模型: {preset['label']} ({provider})")
     return ChatOpenAI(
-        model=DEEPSEEK_MODEL,
-        api_key=DEEPSEEK_API_KEY,
-        base_url=DEEPSEEK_BASE_URL,
+        model=preset["default_model"],
+        api_key=preset["api_key"],
+        base_url=preset["default_base_url"],
         temperature=0.2,
         timeout=90,
     )
@@ -136,7 +141,6 @@ def main():
             score = judge(q, rec["context"], rec["answer"], rec["answer_points"])
             results.append({**rec, **score})
 
-    n = len(results)
     def avg(key, subset=None):
         rs = [r for r in results if r.get(key) is not None and (subset is None or r["category"] == subset)]
         return sum(r[key] for r in rs) / len(rs) if rs else 0.0
