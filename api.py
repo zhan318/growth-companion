@@ -34,7 +34,8 @@ from auth import logout as auth_logout
 from auth import register as auth_register
 from auth import update_display_name as auth_update_display_name
 from auth import update_password as auth_update_password
-from chatbot.chatbot import get_available_models
+from chatbot.chatbot import MODEL_PRESETS, get_available_models, get_default_provider
+from config import LLM_PROVIDER, MODEL_CATALOG
 from knowledge.pipeline import index_documents, index_obsidian
 from knowledge.pipeline import query as rag_query
 from memory.memory import Memory
@@ -271,8 +272,12 @@ def get_agent(session_id: str) -> Agent:
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default_session"
-    model_provider: str = "deepseek"
+    model_provider: str = LLM_PROVIDER
     mode: str = "workspace"  # workspace | interview
+    # 深度思考开关：None = 用服务端默认（config.LLM_THINKING，默认关闭）
+    thinking: bool | None = None
+    # 型号覆盖：空 = 用该厂商默认型号（.env 的 *_MODEL）
+    model: str = ""
 
 
 class LLMKeyRequest(BaseModel):
@@ -286,7 +291,7 @@ class LLMKeyRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     session_id: str
-    model_provider: str = "deepseek"
+    model_provider: str = LLM_PROVIDER
 
 
 class AuthRegisterRequest(BaseModel):
@@ -547,7 +552,14 @@ async def list_models(user_id: int = Depends(get_current_user)):
             "user_configured": uc,            # 该用户是否在前端填了自己的 key
             "effective": g_available or uc,   # 真正可用（不兜底）
         })
-    return {"models": result}
+    return {
+        "models": result,
+        # 服务端默认 provider（前端启动时据此设置默认选中项，避免前后端默认值不一致）
+        "default_provider": get_default_provider(),
+        # 各厂商可用型号目录 + 默认型号（前端渲染「型号」下拉）
+        "model_catalog": {k: [{"id": mid, "desc": desc} for mid, desc in items] for k, items in MODEL_CATALOG.items()},
+        "default_models": {k: v["default_model"] for k, v in MODEL_PRESETS.items()},
+    }
 
 
 # ========== MBTI 性格测试接口 ==========
@@ -925,7 +937,8 @@ async def chat_endpoint(request: ChatRequest, user_id: int = Depends(get_current
         agent = get_agent(request.session_id)
         # 全链路异步执行（Agent.arun）：不阻塞事件循环，并发能力显著提升
         reply = await agent.arun(request.message, model_provider=request.model_provider,
-                                 user_id=user_id, mode=request.mode)
+                                 user_id=user_id, mode=request.mode,
+                                 thinking=request.thinking, model_name=request.model)
         # 首轮对话后异步生成智能标题（fire-and-forget，不阻塞响应）
         if _is_default_label(memory.get_session_label(user_id, request.session_id)):
             asyncio.create_task(_auto_title_session(request.session_id, user_id, request.message))
@@ -946,7 +959,8 @@ async def chat_stream_endpoint(request: ChatRequest, user_id: int = Depends(get_
     async def event_generator():
         try:
             async for event in agent.arun_stream(request.message, model_provider=request.model_provider,
-                                                 user_id=user_id, mode=request.mode):
+                                                 user_id=user_id, mode=request.mode,
+                                                 thinking=request.thinking, model_name=request.model):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"

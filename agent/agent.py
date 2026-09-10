@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from chatbot.chatbot import achat, achat_stream, chat, chat_stream
+from chatbot.chatbot import ThinkFilter, achat, achat_stream, chat, chat_stream, strip_think
 from memory.memory import Memory
 from memory.vector_memory import get_vector_memory
 from tools import registry
@@ -274,7 +274,7 @@ class Agent:
         self.messages.extend(recent)
 
     def run(self, message, model_provider: str = "deepseek", user_id: int = None,
-            mode: str = "workspace"):
+            mode: str = "workspace", thinking: bool = None, model_name: str = None):
         # 若有 user_id，优先取该用户为该模型配置的密钥（用户级 key 覆盖全局配置）
         user_key = self.memory.get_user_llm_key(user_id, model_provider) if user_id else None
         user_key = user_key if (user_key and user_key.get("api_key")) else None
@@ -285,12 +285,12 @@ class Agent:
         self.add_user_message(message)
 
         try:
-            return self._run_impl(message, model_provider, user_key, mode)
+            return self._run_impl(message, model_provider, user_key, mode, thinking, model_name)
         finally:
             # 本轮消息统一落库（单事务，减少写放大）
             self.flush_messages()
 
-    def _run_impl(self, message, model_provider, user_key, mode):
+    def _run_impl(self, message, model_provider, user_key, mode, thinking, model_name):
         """run() 的实际逻辑体（由 run 包裹 flush）"""
 
         # ── 面试模式：第一轮直接出题（跳过 LLM 自由回答，保证一题一答）──
@@ -348,12 +348,14 @@ class Agent:
                 tool_choice="auto",
                 provider=model_provider,
                 user_key=user_key,
-            )
+                thinking=thinking,
+                model_name=model_name,
+                )
             choice = response.choices[0]
             finish_reason = choice.finish_reason
 
             if finish_reason != "tool_calls":
-                answer = choice.message.content
+                answer = strip_think(choice.message.content or "")
                 # 面试模式：LLM 点评（用户答题的回答）后，Agent 自动调 mock_interview 出下一题
                 # 这样保证"一题一答"节奏，不依赖 LLM 记得调工具
                 if mode == "interview":
@@ -399,13 +401,15 @@ class Agent:
             tool_choice="none",
             provider=model_provider,
             user_key=user_key,
-        )
-        final_answer = final_response.choices[0].message.content
+            thinking=thinking,
+            model_name=model_name,
+            )
+        final_answer = strip_think(final_response.choices[0].message.content or "")
         self.add_assistant_message(final_answer)
         return final_answer
 
     async def arun(self, message, model_provider: str = "deepseek", user_id: int = None,
-                   mode: str = "workspace"):
+                   mode: str = "workspace", thinking: bool = None, model_name: str = None):
         """异步执行（Agent 全链路异步，不阻塞事件循环）。
 
         与 run() 逻辑一致，但：
@@ -423,12 +427,12 @@ class Agent:
         self.add_user_message(message)
 
         try:
-            return await self._arun_impl(message, model_provider, user_key, mode)
+            return await self._arun_impl(message, model_provider, user_key, mode, thinking, model_name)
         finally:
             # 本轮消息统一落库（单事务，减少写放大）
             self.flush_messages()
 
-    async def _arun_impl(self, message, model_provider, user_key, mode):
+    async def _arun_impl(self, message, model_provider, user_key, mode, thinking, model_name):
         """arun() 的实际逻辑体（由 arun 包裹 flush）"""
         # ── 面试模式：第一轮直接出题（跳过 LLM 自由回答，保证一题一答）──
         if mode == "interview" and self._interview_first:
@@ -484,12 +488,14 @@ class Agent:
                 tool_choice="auto",
                 provider=model_provider,
                 user_key=user_key,
-            )
+                thinking=thinking,
+                model_name=model_name,
+                )
             choice = response.choices[0]
             finish_reason = choice.finish_reason
 
             if finish_reason != "tool_calls":
-                answer = choice.message.content
+                answer = strip_think(choice.message.content or "")
                 # 面试模式：LLM 点评后，Agent 自动调 mock_interview 出下一题
                 if mode == "interview":
                     mock_result = await asyncio.to_thread(
@@ -538,13 +544,15 @@ class Agent:
             tool_choice="none",
             provider=model_provider,
             user_key=user_key,
-        )
-        final_answer = final_response.choices[0].message.content
+            thinking=thinking,
+            model_name=model_name,
+            )
+        final_answer = strip_think(final_response.choices[0].message.content or "")
         self.add_assistant_message(final_answer)
         return final_answer
 
     def run_stream(self, message, model_provider: str = "deepseek", user_id: int = None,
-                   mode: str = "workspace"):
+                   mode: str = "workspace", thinking: bool = None, model_name: str = None):
         """流式执行：tool calling 阶段非流式，最终回答流式输出。
 
         Yields:
@@ -561,11 +569,11 @@ class Agent:
 
         # 外层包装：生成器耗尽或关闭时统一 flush（确保消息落库）
         try:
-            yield from self._run_stream_impl(message, model_provider, user_key, mode)
+            yield from self._run_stream_impl(message, model_provider, user_key, mode, thinking, model_name)
         finally:
             self.flush_messages()
 
-    def _run_stream_impl(self, message, model_provider, user_key, mode):
+    def _run_stream_impl(self, message, model_provider, user_key, mode, thinking, model_name):
         """run_stream() 的实际生成器（由 run_stream 包裹 flush）"""
 
         # 面试模式：插入强信号 system 消息，把用户输入明确标记为面试主题
@@ -622,7 +630,9 @@ class Agent:
                 tool_choice="auto",
                 provider=model_provider,
                 user_key=user_key,
-            )
+                thinking=thinking,
+                model_name=model_name,
+                )
             choice = response.choices[0]
             finish_reason = choice.finish_reason
 
@@ -635,12 +645,21 @@ class Agent:
                         tool_choice="none",
                         provider=model_provider,
                         user_key=user_key,
-                    )
+                        thinking=thinking,
+                        model_name=model_name,
+                        )
+                    tf = ThinkFilter()
                     for chunk in stream:
                         delta = chunk.choices[0].delta.content or ""
                         if delta:
-                            collected += delta
-                            yield {"type": "token", "content": delta}
+                            visible = tf.feed(delta)
+                            if visible:
+                                collected += visible
+                                yield {"type": "token", "content": visible}
+                    tail = tf.flush()
+                    if tail:
+                        collected += tail
+                        yield {"type": "token", "content": tail}
                 except Exception as e:
                     logger.error("流式调用失败: %s", e)
                     # fallback: 非流式重试
@@ -651,8 +670,10 @@ class Agent:
                             tool_choice="none",
                             provider=model_provider,
                             user_key=user_key,
-                        )
-                        collected = fallback.choices[0].message.content or ""
+                            thinking=thinking,
+                            model_name=model_name,
+                            )
+                        collected = strip_think(fallback.choices[0].message.content or "")
                         if collected:
                             yield {"type": "token", "content": collected}
                     except Exception as e2:
@@ -679,8 +700,10 @@ class Agent:
                             tool_choice="none",
                             provider=model_provider,
                             user_key=user_key,
-                        )
-                        collected = fallback.choices[0].message.content or ""
+                            thinking=thinking,
+                            model_name=model_name,
+                            )
+                        collected = strip_think(fallback.choices[0].message.content or "")
                     except Exception as e2:
                         collected = f"（抱歉，处理您的问题时出错了：{e2}）"
                     if collected:
@@ -725,13 +748,15 @@ class Agent:
             tool_choice="none",
             provider=model_provider,
             user_key=user_key,
-        )
-        final_answer = final_response.choices[0].message.content
+            thinking=thinking,
+            model_name=model_name,
+            )
+        final_answer = strip_think(final_response.choices[0].message.content or "")
         self.add_assistant_message(final_answer)
         yield {"type": "done", "content": final_answer}
 
     async def arun_stream(self, message, model_provider: str = "deepseek", user_id: int = None,
-                          mode: str = "workspace"):
+                          mode: str = "workspace", thinking: bool = None, model_name: str = None):
         """异步流式执行（Agent 全链路异步，不阻塞事件循环）。
 
         与 run_stream() 逻辑一致，但：
@@ -753,12 +778,12 @@ class Agent:
 
         # 外层包装：异步生成器耗尽或关闭时统一 flush（确保消息落库）
         try:
-            async for event in self._arun_stream_impl(message, model_provider, user_key, mode):
+            async for event in self._arun_stream_impl(message, model_provider, user_key, mode, thinking, model_name):
                 yield event
         finally:
             self.flush_messages()
 
-    async def _arun_stream_impl(self, message, model_provider, user_key, mode):
+    async def _arun_stream_impl(self, message, model_provider, user_key, mode, thinking, model_name):
         """arun_stream() 的实际异步生成器（由 arun_stream 包裹 flush）"""
         # 面试模式：插入强信号 system 消息，把用户输入明确标记为面试主题
         if mode == "interview":
@@ -816,7 +841,9 @@ class Agent:
                 tool_choice="auto",
                 provider=model_provider,
                 user_key=user_key,
-            )
+                thinking=thinking,
+                model_name=model_name,
+                )
             choice = response.choices[0]
             finish_reason = choice.finish_reason
 
@@ -830,12 +857,21 @@ class Agent:
                         tool_choice="none",
                         provider=model_provider,
                         user_key=user_key,
-                    )
+                        thinking=thinking,
+                        model_name=model_name,
+                        )
+                    tf = ThinkFilter()
                     async for chunk in stream:
                         delta = chunk.choices[0].delta.content or ""
                         if delta:
-                            collected += delta
-                            yield {"type": "token", "content": delta}
+                            visible = tf.feed(delta)
+                            if visible:
+                                collected += visible
+                                yield {"type": "token", "content": visible}
+                    tail = tf.flush()
+                    if tail:
+                        collected += tail
+                        yield {"type": "token", "content": tail}
                 except Exception as e:
                     logger.error("流式调用失败: %s", e)
                     # fallback: 非流式重试
@@ -846,8 +882,10 @@ class Agent:
                             tool_choice="none",
                             provider=model_provider,
                             user_key=user_key,
-                        )
-                        collected = fallback.choices[0].message.content or ""
+                            thinking=thinking,
+                            model_name=model_name,
+                            )
+                        collected = strip_think(fallback.choices[0].message.content or "")
                         if collected:
                             yield {"type": "token", "content": collected}
                     except Exception as e2:
@@ -875,8 +913,10 @@ class Agent:
                             tool_choice="none",
                             provider=model_provider,
                             user_key=user_key,
-                        )
-                        collected = fallback.choices[0].message.content or ""
+                            thinking=thinking,
+                            model_name=model_name,
+                            )
+                        collected = strip_think(fallback.choices[0].message.content or "")
                     except Exception as e2:
                         collected = f"（抱歉，处理您的问题时出错了：{e2}）"
                     if collected:
@@ -923,8 +963,10 @@ class Agent:
             tool_choice="none",
             provider=model_provider,
             user_key=user_key,
-        )
-        final_answer = final_response.choices[0].message.content
+            thinking=thinking,
+            model_name=model_name,
+            )
+        final_answer = strip_think(final_response.choices[0].message.content or "")
         self.add_assistant_message(final_answer)
         yield {"type": "done", "content": final_answer}
 

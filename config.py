@@ -8,10 +8,39 @@ load_dotenv()
 
 
 # ========== LLM 提供商配置 ==========
-# 可选值: deepseek | openai_compatible
-# deepseek: 使用 DeepSeek 官方 API（默认，免费有额度）
-# openai_compatible: 兼容 OpenAI SDK 的第三方模型（智谱/千问/零一等）
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "deepseek")
+# 全项目默认 provider（唯一配置源）：
+#   聊天主链路 / RAG 知识库问答 / 评测脚本 / 前端默认选中项 全部读这里，
+#   换默认模型只改 .env 一行即可，不需要再改任何代码。
+# 可选值: deepseek | glm | qwen
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "glm").strip().lower()
+# 兜底 provider：LLM_PROVIDER 非法、或对应厂商未配置 API Key 时回退到此值
+FALLBACK_LLM_PROVIDER = os.getenv("FALLBACK_LLM_PROVIDER", "deepseek").strip().lower()
+
+# ========== 深度思考（思维链）开关 ==========
+# 默认关闭：日常对话更快更省 token，且避免思考过程吃光 max_tokens 导致正文为空
+# （实测 GLM 开启思考时，max_tokens 会被 reasoning 占满，返回 content 为空字符串）
+LLM_THINKING = os.getenv("LLM_THINKING", "false").strip().lower() == "true"
+# 开启思考时自动放大的输出上限：思考过程与正文共享 max_tokens，不放大极易返回空内容
+LLM_THINKING_MAX_TOKENS = int(os.getenv("LLM_THINKING_MAX_TOKENS", "2048"))
+
+# ========== 各厂商可用型号目录 ==========
+# /models 接口下发给前端渲染「型号」下拉；每项: (型号ID, 说明)
+# 默认型号 = 各厂商 GLM_MODEL / DEEPSEEK_MODEL / QWEN_MODEL（.env 可覆盖），不必是目录第一个
+MODEL_CATALOG = {
+    "glm": [
+        ("glm-4.5-air", "轻量通用 · 对话/RAG 主力"),
+        ("glm-4.1v-thinking-flashx", "视觉推理 · 支持看图（图传功能上线后用）"),
+        ("glm-4.6", "旗舰文本 · 复杂推理/长文"),
+        ("glm-5.3-flash", "新一代 · 高速"),
+    ],
+    "deepseek": [
+        ("deepseek-v4-flash", "通用 · 快速"),
+        ("deepseek-chat", "通用对话"),
+    ],
+    "qwen": [
+        ("qwen-turbo", "通用 · 快速"),
+    ],
+}
 
 # DeepSeek 配置
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
