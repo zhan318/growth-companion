@@ -37,6 +37,14 @@ const MODE_PILLS: Record<'workspace' | 'interview' | 'knowledge', { icon: string
   knowledge: { icon: '📚', label: '知识库',    subtitle: '优先引用 Obsidian 笔记回答' },
 }
 
+// ── 新会话空状态的推荐话题（点击直接发送） ──
+const SUGGESTED_TOPICS = [
+  '总结一下我最近的学习笔记',
+  '根据我的笔记出几道题考考我',
+  '用费曼技巧讲一个概念',
+  '今天 AI 圈有什么新闻',
+]
+
 function App() {
   // ── 认证状态 ──
   const [token, setToken] = useState(() => localStorage.getItem('token') || '')
@@ -50,7 +58,14 @@ function App() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [modelProvider, setModelProvider] = useState('deepseek')
+  // 默认值留空，登录后由后端 /models 的 default_provider 下发（避免前后端默认值不一致）
+  const [modelProvider, setModelProvider] = useState('')
+  // 深度思考开关：默认关闭，选择记在浏览器本地，下次打开保持
+  const [thinking, setThinking] = useState(() => localStorage.getItem('llm_thinking') === 'true')
+  // 型号目录（后端 /models 下发）与当前选中型号；空 = 用该厂商默认型号
+  const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; desc: string }[]>>({})
+  const [defaultModels, setDefaultModels] = useState<Record<string, string>>({})
+  const [modelName, setModelName] = useState('')
   const [isDark, setIsDark] = useState(false)
   const [toast, setToast] = useState('')
   // 各模型是否真正配置密钥（false = 选中后将用 DeepSeek 兜底）
@@ -136,7 +151,6 @@ function App() {
     deepseek: { label: 'DeepSeek', role: '通用助手', scene: '日常对话、问答、工具调用' },
     glm: { label: '智谱 GLM', role: '创意写作', scene: '写文章、文案、翻译、故事' },
     qwen: { label: '通义千问', role: '逻辑分析', scene: '推理、代码、数学、技术问题' },
-    yi: { label: '零一万物', role: '头脑风暴', scene: '灵感发散、快速生成、脑洞' },
   }
 
   useEffect(() => {
@@ -508,6 +522,11 @@ function App() {
   }
 
   const newSession = async () => {
+    // 当前会话还没发过任何消息时，直接沿用现有会话，避免连点创建一堆空会话
+    if (messages.length === 0) {
+      if (window.innerWidth < 768) setShowSidebar(false)
+      return
+    }
     try {
       const res = await apiFetch(`${apiBase}/user/sessions`, {
         method: 'POST',
@@ -516,6 +535,32 @@ function App() {
       if (res.ok) {
         const data = await res.json()
         await switchSession(data.session_id)
+        await fetchSessions()
+      }
+    } catch {}
+  }
+
+  // 从主页进入工作台：落在一个「干净的对话」上——当前会话没内容则沿用，有内容则新建
+  const enterWorkspace = async () => {
+    setChatMode('workspace')
+    setMessages([])
+    setPage('chat')
+    try {
+      const res = await apiFetch(`${apiBase}/user/sessions`, { headers: authHeaders() })
+      if (!res.ok) return
+      const list = (await res.json()).sessions || []
+      const cur = list.find((s: any) => s.session_id === sessionId)
+      // 已在一个空会话上（或还没有会话）就不新建，避免堆积空会话
+      if (cur && (cur.msg_count || 0) === 0) return
+      const create = await apiFetch(`${apiBase}/user/sessions`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      if (create.ok) {
+        const data = await create.json()
+        setSessionId(data.session_id)
+        setMessages([])
+        localStorage.setItem('session_id', data.session_id)
         await fetchSessions()
       }
     } catch {}
@@ -616,6 +661,12 @@ function App() {
         const eff: Record<string, boolean> = {}
         for (const m of (data.models || [])) eff[m.id] = !!m.effective
         setModelEffective(eff)
+        // 仅在尚未选择时采用后端默认值（保存/删除密钥后也会调用本函数，不能覆盖用户已做的选择）
+        if (data.default_provider) {
+          setModelProvider(prev => prev || data.default_provider)
+        }
+        setModelCatalog(data.model_catalog || {})
+        setDefaultModels(data.default_models || {})
       }
     } catch {}
   }
@@ -686,8 +737,9 @@ function App() {
   // 后端 /chat 接口只接 workspace | interview，knowledge 走 workspace（hint 承担语义）
   const backendMode: 'workspace' | 'interview' = chatMode === 'interview' ? 'interview' : 'workspace'
 
-  const sendMessage = async () => {
-    const text = input.trim()
+  const sendMessage = async (overrideText?: unknown) => {
+    // 支持「话题」直接传入文本发送；普通按钮会把点击事件当参数传入，用类型守卫排除
+    const text = (typeof overrideText === 'string' ? overrideText : input).trim()
     if (!text || loading) return
 
     setInput('')
@@ -700,11 +752,18 @@ function App() {
     ])
     setLoading(true)
 
+    // 首条消息发出后乐观更新侧边栏标题（后端稍后会异步生成更准的智能标题）
+    const curSession = sessions.find((s: any) => s.session_id === sessionId)
+    if (curSession && ["", "default", "新对话"].includes((curSession.label || "").trim())) {
+      const optimisticTitle = text.slice(0, 12) || "新对话"
+      setSessions((prev) => prev.map((s: any) => s.session_id === sessionId ? { ...s, label: optimisticTitle } : s))
+    }
+
     try {
       const res = await apiFetch(`${apiBase}/chat`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ message: finalMessage, session_id: sessionId, model_provider: modelProvider, mode: backendMode }),
+        body: JSON.stringify({ message: finalMessage, session_id: sessionId, model_provider: modelProvider, mode: backendMode, thinking: thinking, model: modelName }),
       })
 
       if (!res.ok) {
@@ -718,8 +777,10 @@ function App() {
         next[next.length - 1] = { role: 'assistant', content: data.reply || '(未获取到回答)' }
         return next
       })
-      // 刷新会话列表（更新预览文字）
+      // 刷新会话列表（更新预览文字）；后端智能标题为异步生成且可能较慢，错开多次刷新兜底
       fetchSessions()
+      setTimeout(fetchSessions, 3000)
+      setTimeout(fetchSessions, 8000)
     } catch (e: any) {
       setMessages((prev) => {
         const next = [...prev]
@@ -740,6 +801,81 @@ function App() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
+  // 空会话状态（新对话）：居中构图，输入大卡片展示在页面中部
+  const isEmptyState = messages.length === 0 && !historyLoading
+
+  // 输入大卡片（空会话时居中、有消息后固定在底部，两处复用同一份 JSX）
+  const inputCard = (
+    <div className={`rounded-3xl border px-4 pt-2.5 pb-2 transition ${
+      isDark
+        ? "border-gray-700 bg-gray-900 focus-within:border-blue-500 focus-within:shadow-lg focus-within:shadow-blue-500/10"
+        : "border-gray-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.07)] focus-within:border-blue-400 focus-within:shadow-[0_10px_36px_rgba(59,130,246,0.13)]"
+    }`}>
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={
+          chatMode === 'knowledge' ? "向你的 Obsidian 笔记库提问…"
+          : "给成长智伴发条消息..."
+        }
+        rows={3}
+        className={`w-full resize-none bg-transparent border-0 px-1 py-1 text-[15px] outline-none max-h-48 ${isDark ? "text-gray-100 placeholder-gray-500" : "text-gray-800 placeholder-gray-400"}`}
+      />
+      {/* 卡片内底部：左 chips · 右 附件/发送 */}
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          {([
+            { key: 'deepThink',     icon: '🧠', label: '展开推理' },
+            { key: 'webSearch',     icon: '🌐', label: '联网辅助' },
+            { key: 'knowledgeBase', icon: '📚', label: '引用笔记' },
+          ] as const).map(({ key, icon, label }) => {
+            const on = (toolChips as any)[key] as boolean
+            return (
+              <button
+                key={key}
+                onClick={() => setToolChips((c) => ({ ...c, [key]: !on }))}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
+                        on
+                          ? isDark
+                            ? 'bg-blue-500/20 border-blue-400/50 text-blue-300'
+                            : 'bg-blue-100 border-blue-400/60 text-blue-700'
+                          : isDark
+                            ? 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
+                            : 'bg-blue-50/70 border-blue-200 text-blue-600 hover:border-blue-300'
+                      }`}
+                title={on ? `已开启：${label}` : `点击开启：${label}`}
+              >
+                <span>{icon}</span><span>{label}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* 附件（先占位，为后续支持文件附件预留 UI 锚点） */}
+          <button
+            type="button"
+            onClick={() => setToast('附件功能待后续版本支持')}
+            title="附件"
+            className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-500" : "hover:bg-gray-100 text-gray-400"}`}
+          >📎</button>
+          {/* 圆形发送按钮 */}
+          <button
+            type="button"
+            onClick={() => sendMessage()}
+            disabled={loading || !input.trim()}
+            title={loading ? '生成中...' : '发送 (Enter)'}
+            className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition ${
+              loading || !input.trim()
+                ? isDark ? "bg-gray-800 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-300 cursor-not-allowed"
+                : isDark ? "bg-blue-500 hover:bg-blue-400 text-white" : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+            }`}
+          >↑</button>
+        </div>
+      </div>
+    </div>
+  )
+
   // ═══════════════════════════════════════
   //  渲染：登录/注册页
   // ═══════════════════════════════════════
@@ -750,7 +886,7 @@ function App() {
         <div className="w-full max-w-sm mx-4">
           <div className="text-center mb-8">
             <p className="text-5xl mb-3">🧠</p>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">智能个人助手</h1>
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">成长智伴</h1>
             <p className="text-sm text-gray-400 mt-1">连接你的 Obsidian 笔记库</p>
           </div>
 
@@ -869,7 +1005,7 @@ function App() {
 
         {/* 顶部工具条 */}
         <header className="relative z-10 shrink-0 flex items-center justify-between px-6 py-4">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">智能个人助手</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">成长智伴</span>
           <div className="flex items-center gap-3 text-xs">
             <span className="text-gray-500 dark:text-gray-400">{username}</span>
             <button onClick={() => { setPage('profile'); setTimeout(fetchProfile, 50) }}
@@ -895,9 +1031,9 @@ function App() {
         </main>
 
         {/* 右下角功能入口卡片 */}
-        <div className="relative z-10 shrink-0 flex flex-wrap justify-end items-end gap-5 px-6 pb-8 md:px-12">
-          <button onClick={() => { setChatMode('workspace'); setMessages([]); setPage('chat') }}
-            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+        <div className="relative z-10 shrink-0 grid grid-cols-4 gap-3 md:gap-5 px-6 pb-8 md:px-12">
+          <button onClick={enterWorkspace}
+            className="hub-card w-full h-56 md:h-60 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-4 md:p-6 text-left hover:shadow-2xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
             <div className="flex items-start justify-between">
               <span className="text-4xl transition-transform duration-300 group-hover:scale-110">🧠</span>
               <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
@@ -907,7 +1043,7 @@ function App() {
           </button>
 
           <button onClick={() => { setChatMode('interview'); setMessages([]); setPage('chat') }}
-            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-purple-400 dark:hover:border-purple-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            className="hub-card w-full h-56 md:h-60 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-4 md:p-6 text-left hover:shadow-2xl hover:border-purple-400 dark:hover:border-purple-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
             <div className="flex items-start justify-between">
               <span className="text-4xl transition-transform duration-300 group-hover:scale-110">🎯</span>
               <span className="text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
@@ -917,7 +1053,7 @@ function App() {
           </button>
 
           <button onClick={() => { setPage('mbti') }}
-            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-teal-400 dark:hover:border-teal-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            className="hub-card w-full h-56 md:h-60 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-4 md:p-6 text-left hover:shadow-2xl hover:border-teal-400 dark:hover:border-teal-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
             <div className="flex items-start justify-between">
               <span className="text-4xl transition-transform duration-300 group-hover:scale-110">🧭</span>
               <span className="text-teal-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
@@ -927,7 +1063,7 @@ function App() {
           </button>
 
           <button onClick={() => { setPage('dashboard'); fetchDashboard() }}
-            className="hub-card w-64 md:w-72 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-6 text-left hover:shadow-2xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
+            className="hub-card w-full h-56 md:h-60 rounded-3xl bg-white/90 dark:bg-gray-900/90 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg p-4 md:p-6 text-left hover:shadow-2xl hover:border-blue-400 dark:hover:border-blue-500 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer group">
             <div className="flex items-start justify-between">
               <span className="text-4xl transition-transform duration-300 group-hover:scale-110">📊</span>
               <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity text-sm">进入 →</span>
@@ -1435,6 +1571,7 @@ function App() {
                         onChange={(e) => {
                           const val = e.target.value
                           setModelProvider(val)
+                          setModelName('') // 切厂商后型号回到该厂商默认
                           if (!modelEffective[val]) {
                             setToast(`${MODEL_INFO[val].label} 未配置密钥，将使用 DeepSeek 兜底回答`)
                           } else {
@@ -1453,6 +1590,48 @@ function App() {
                           </option>
                         ))}
                       </select>
+                    </div>
+
+                    {/* 型号选择（该厂商有多个型号时显示；空 = 厂商默认型号） */}
+                    {(modelCatalog[modelProvider]?.length || 0) > 1 && (
+                      <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                        <p className="text-[11px] opacity-60 mb-1">型号</p>
+                        <select
+                          value={modelName}
+                          onChange={(e) => setModelName(e.target.value)}
+                          className={`w-full text-xs rounded px-2 py-1.5 cursor-pointer border ${isDark ? "bg-gray-800 text-gray-200 border-gray-700" : "bg-gray-50 text-gray-700 border-gray-200"}`}
+                          title="选择该厂商的具体型号"
+                        >
+                          <option value="">默认{defaultModels[modelProvider] ? ` (${defaultModels[modelProvider]})` : ''}</option>
+                          {modelCatalog[modelProvider].map((m: { id: string; desc: string }) => (
+                            <option key={m.id} value={m.id}>
+                              {m.id}{m.desc ? ` · ${m.desc}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* 深度思考开关 */}
+                    <div className={`px-3 py-2 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-[11px] opacity-60">深度思考</p>
+                          <p className="text-[10px] opacity-40 truncate">开启更严谨，但更慢</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !thinking
+                            setThinking(next)
+                            localStorage.setItem('llm_thinking', String(next))
+                          }}
+                          className={`relative w-9 h-5 shrink-0 rounded-full cursor-pointer transition-colors ${thinking ? 'bg-blue-500' : (isDark ? 'bg-gray-700' : 'bg-gray-300')}`}
+                          title={thinking ? '当前：深度思考开启' : '当前：深度思考关闭'}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${thinking ? 'translate-x-4' : ''}`} />
+                        </button>
+                      </div>
                     </div>
 
                     <button onClick={() => { setUserMenuOpen(false); setPage('profile'); setTimeout(fetchProfile, 50) }}
@@ -1490,52 +1669,30 @@ function App() {
 
       {/* 消息列表 */}
       <main className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-3xl mx-auto space-y-4">
-          {messages.length === 0 && !historyLoading && (
-            <div className="flex flex-col items-center justify-center h-full mt-10">
-              <p className={`text-2xl font-semibold mb-2 ${isDark ? "text-gray-200" : "text-gray-800"}`}>
+        <div className="max-w-4xl mx-auto space-y-5">
+          {isEmptyState && (
+            <div className="flex flex-col items-center pt-[20vh]">
+              <p className="text-5xl mb-4">🧠</p>
+              <p className={`text-[28px] font-semibold ${isDark ? "text-gray-200" : "text-gray-800"}`}>
                 今天想聊些什么？
               </p>
-              <p className={`text-sm mb-6 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                选个模式开聊，随时再换
-              </p>
-              <div className="flex flex-wrap justify-center gap-3 max-w-2xl">
-                {(Object.keys(MODE_PILLS) as Array<keyof typeof MODE_PILLS>).map((m) => {
-                  const p = MODE_PILLS[m]
-                  const active = chatMode === m
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => {
-                        if (m === 'interview') {
-                          // 切到 interview 触发早返到独立考试式组件
-                          setChatMode('interview')
-                          setMessages([])
-                        } else {
-                          setChatMode(m)
-                        }
-                      }}
-                      className={`flex flex-col items-start gap-1 px-5 py-4 rounded-2xl border-2 transition cursor-pointer min-w-[180px] ${
-                        active
-                          ? isDark
-                            ? 'border-blue-500 bg-blue-500/10'
-                            : 'border-blue-500 bg-blue-50'
-                          : isDark
-                            ? 'border-gray-700 hover:border-gray-500 bg-gray-900/40'
-                            : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">{p.icon}</span>
-                        <span className={`text-sm font-semibold ${isDark ? "text-gray-100" : "text-gray-800"}`}>{p.label}</span>
-                      </div>
-                      <p className={`text-[11px] text-left ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                        {p.subtitle}
-                      </p>
-                    </button>
-                  )
-                })}
+              {/* 推荐话题：点击直接发送 */}
+              <div className="flex flex-wrap justify-center gap-2.5 mt-8 max-w-xl">
+                {SUGGESTED_TOPICS.map((topic) => (
+                  <button
+                    key={topic}
+                    onClick={() => sendMessage(topic)}
+                    className={`px-3.5 py-1.5 rounded-full border text-sm transition cursor-pointer ${
+                      isDark
+                        ? "border-gray-700 text-gray-300 hover:border-blue-500 hover:text-blue-300 bg-gray-900/40"
+                        : "border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600 bg-white hover:shadow-sm"
+                    }`}
+                  >
+                    {topic}
+                  </button>
+                ))}
               </div>
+              <div className="w-full max-w-4xl mt-12">{inputCard}</div>
             </div>
           )}
 
@@ -1547,7 +1704,7 @@ function App() {
 
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`group max-w-[75%] rounded-2xl px-4 py-2.5 leading-relaxed ${
+              <div className={`group max-w-[85%] rounded-2xl px-4 py-3 leading-relaxed text-[15px] ${
                 msg.role === 'user'
                   ? `bg-blue-600 text-white rounded-br-md whitespace-pre-wrap ${isDark ? "!bg-blue-500" : ""}`
                   : `rounded-bl-md whitespace-normal ${isDark ? "!bg-gray-800 !text-gray-100" : "bg-gray-100 text-gray-800"}`
@@ -1592,74 +1749,15 @@ function App() {
         </div>
       </main>
 
-      {/* 输入区（chip 行 + 输入框 + 附件 + 圆形发送） */}
-      <footer className={`shrink-0 border-t px-4 py-3 ${isDark ? "border-gray-800 bg-gray-950" : "border-gray-200 bg-white"}`}>
-        <div className="max-w-3xl mx-auto space-y-2">
-          {/* 工具能力 chip 行（与 sendMessage.buildUserMessage 联动） */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {([
-              { key: 'deepThink',     icon: '🧠', label: '展开推理' },
-              { key: 'webSearch',     icon: '🌐', label: '联网辅助' },
-              { key: 'knowledgeBase', icon: '📚', label: '引用笔记' },
-            ] as const).map(({ key, icon, label }) => {
-              const on = (toolChips as any)[key] as boolean
-              return (
-                <button
-                  key={key}
-                  onClick={() => setToolChips((c) => ({ ...c, [key]: !on }))}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
-                    on
-                      ? isDark
-                        ? 'bg-blue-500/20 border-blue-400/50 text-blue-300'
-                        : 'bg-blue-50 border-blue-200 text-blue-700'
-                      : isDark
-                        ? 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'
-                        : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}
-                  title={on ? `已开启：${label}` : `点击开启：${label}`}
-                >
-                  <span>{icon}</span><span>{label}</span>
-                </button>
-              )
-            })}
+      {/* 输入区（新对话空状态时居中展示在主区，此处在有消息后固定底部） */}
+      {!isEmptyState && (
+        <footer className={`shrink-0 px-4 pt-2 pb-3 ${isDark ? "bg-gray-950" : "bg-white"}`}>
+          <div className="max-w-4xl mx-auto">
+            {inputCard}
+            <p className={`text-[11px] text-center mt-2 ${isDark ? "text-gray-600" : "text-gray-400"}`}>Enter 发送 · Shift+Enter 换行</p>
           </div>
-
-          {/* 输入行 */}
-          <div className={`flex items-end gap-2 rounded-2xl border px-3 py-2 transition ${isDark ? "border-gray-700 bg-gray-900 focus-within:border-blue-500" : "border-gray-300 bg-white focus-within:border-blue-500 focus-within:shadow-sm"}`}>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                chatMode === 'knowledge' ? "向你的 Obsidian 笔记库提问…"
-                : "给成长智伴发条消息..."
-              }
-              rows={1}
-              className={`flex-1 resize-none bg-transparent border-0 px-1 py-1.5 text-sm outline-none ${isDark ? "text-gray-100 placeholder-gray-500" : "text-gray-800 placeholder-gray-400"}`}
-            />
-            {/* 附件（先占位，为后续支持文件附件预留 UI 锚点） */}
-            <button
-              type="button"
-              onClick={() => setToast('附件功能待后续版本支持')}
-              title="附件"
-              className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-500" : "hover:bg-gray-100 text-gray-400"}`}
-            >📎</button>
-            {/* 圆形发送按钮 */}
-            <button
-              type="button"
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              title={loading ? '生成中...' : '发送 (Enter)'}
-              className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition ${
-                loading || !input.trim()
-                  ? isDark ? "bg-gray-800 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-300 cursor-not-allowed"
-                  : isDark ? "bg-blue-500 hover:bg-blue-400 text-white" : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
-              }`}
-            >↑</button>
-          </div>
-          <p className={`text-[11px] text-center ${isDark ? "text-gray-600" : "text-gray-400"}`}>Enter 发送 · Shift+Enter 换行</p>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* 模型密钥设置弹窗 */}
       {showKeySettings && (

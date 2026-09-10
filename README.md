@@ -159,18 +159,21 @@ pytest
 在 `.env` 中配置（都有合理默认值，最少只需填 `DEEPSEEK_API_KEY`）：
 
 ```ini
+# ── 默认 LLM 提供商（唯一配置源：聊天 + 知识库 RAG + 评测 + 前端默认选中）──
+# 可选: deepseek | glm | qwen，改这一行即可全链路切换
+LLM_PROVIDER=glm
+# 兜底：LLM_PROVIDER 非法或对应厂商未配 key 时回退到它
+FALLBACK_LLM_PROVIDER=deepseek
+
 # ── 主模型（DeepSeek）──
 DEEPSEEK_API_KEY=sk-xxx
 # DEEPSEEK_BASE_URL=https://api.deepseek.com
 # DEEPSEEK_MODEL=deepseek-v4-flash
 
-# ── 切换 LLM 提供商 ──
-# LLM_PROVIDER=deepseek          # deepseek | openai_compatible
-
-# ── 通用 OpenAI 兼容（GLM / Qwen / Yi 等）──
-# OPENAI_API_KEY=sk-xxx
-# OPENAI_BASE_URL=https://...
-# OPENAI_MODEL_NAME=xxx
+# ── 智谱 GLM ──
+# GLM_API_KEY=your-zhipu-key-here
+# GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+# GLM_MODEL=glm-4.5-air
 
 # ── 知识库 / RAG ──
 # KNOWLEDGE_DOCS_DIR=knowledge/docs

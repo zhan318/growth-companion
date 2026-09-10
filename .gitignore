@@ -39,3 +39,6 @@ nul
 # WorkBuddy 工作目录（私有记忆与运行时数据，不进版本库）
 .workbuddy/
 eval/reports/answers.jsonl
+
+# 备份文件（临时产物，不进版本库）
+*-bak.md
