@@ -491,6 +491,26 @@ function App() {
     } catch {}
   }
 
+  // 刷新会话列表，但保留当前会话尚未被后端替换的乐观标题
+  // （后端智能标题是异步生成的：落地前服务端 label 还是「新对话」，直接覆盖会把乐观标题冲掉）
+  const refreshPreservingTitle = async (sid: string) => {
+    try {
+      const res = await apiFetch(`${apiBase}/user/sessions`, { headers: authHeaders() })
+      if (!res.ok) return
+      const list = (await res.json()).sessions || []
+      setSessions((prev) => {
+        const cur = prev.find((s: any) => s.session_id === sid)
+        const server = list.find((s: any) => s.session_id === sid)
+        const serverIsDefault = !server || ["", "default", "新对话"].includes((server.label || "").trim())
+        const curIsCustom = cur && !["", "default", "新对话"].includes((cur.label || "").trim())
+        if (curIsCustom && serverIsDefault) {
+          return list.map((s: any) => s.session_id === sid ? { ...s, label: cur.label } : s)
+        }
+        return list
+      })
+    } catch {}
+  }
+
   // 拉取指定会话的历史消息
   const fetchMessages = async (sid: string) => {
     setHistoryLoading(true)
@@ -522,48 +542,33 @@ function App() {
   }
 
   const newSession = async () => {
-    // 当前会话还没发过任何消息时，直接沿用现有会话，避免连点创建一堆空会话
-    if (messages.length === 0) {
-      if (window.innerWidth < 768) setShowSidebar(false)
-      return
-    }
-    try {
-      const res = await apiFetch(`${apiBase}/user/sessions`, {
-        method: 'POST',
-        headers: authHeaders(),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        await switchSession(data.session_id)
-        await fetchSessions()
-      }
-    } catch {}
+    if (window.innerWidth < 768) setShowSidebar(false)
+    // 已在「虚拟新对话」（sessionId 为空）或当前会话本来就是空的 → 不重复动作
+    if (!sessionId) return
+    const cur = sessions.find((s: any) => s.session_id === sessionId)
+    if (cur && (cur.msg_count || 0) === 0 && messages.length === 0) return
+    // 切到虚拟新对话：不落库，第一条消息发出时才真正创建会话
+    setSessionId('')
+    setMessages([])
+    localStorage.setItem('session_id', '')
   }
 
-  // 从主页进入工作台：落在一个「干净的对话」上——当前会话没内容则沿用，有内容则新建
+  // 从主页进入工作台：落在一个「干净的对话」上——上一个会话有内容则进入虚拟新对话（不落库）
   const enterWorkspace = async () => {
     setChatMode('workspace')
     setMessages([])
     setPage('chat')
+    if (!sessionId) return
     try {
       const res = await apiFetch(`${apiBase}/user/sessions`, { headers: authHeaders() })
       if (!res.ok) return
       const list = (await res.json()).sessions || []
       const cur = list.find((s: any) => s.session_id === sessionId)
-      // 已在一个空会话上（或还没有会话）就不新建，避免堆积空会话
+      // 当前会话还是空的 → 直接沿用，不进入虚拟态
       if (cur && (cur.msg_count || 0) === 0) return
-      const create = await apiFetch(`${apiBase}/user/sessions`, {
-        method: 'POST',
-        headers: authHeaders(),
-      })
-      if (create.ok) {
-        const data = await create.json()
-        setSessionId(data.session_id)
-        setMessages([])
-        localStorage.setItem('session_id', data.session_id)
-        await fetchSessions()
-      }
     } catch {}
+    setSessionId('')
+    localStorage.setItem('session_id', '')
   }
 
   const deleteSession = async (sid: string) => {
@@ -742,6 +747,26 @@ function App() {
     const text = (typeof overrideText === 'string' ? overrideText : input).trim()
     if (!text || loading) return
 
+    // 虚拟新对话：第一条消息发出时才真正创建会话（空会话永远不落库、不进历史列表）
+    let sid = sessionId
+    if (!sid) {
+      try {
+        const res = await apiFetch(`${apiBase}/user/sessions`, {
+          method: 'POST',
+          headers: authHeaders(),
+        })
+        if (!res.ok) throw new Error('创建会话失败')
+        const data = await res.json()
+        sid = data.session_id
+        setSessionId(sid)
+        localStorage.setItem('session_id', sid)
+        await refreshPreservingTitle(sid)
+      } catch (e: any) {
+        setToast(e.message || '创建会话失败')
+        return
+      }
+    }
+
     setInput('')
     const finalMessage = buildUserMessage(text)
     // 用户看到的消息仍是原文，hint 仅作为"额外上下文"传后端，不污染 UI
@@ -753,17 +778,23 @@ function App() {
     setLoading(true)
 
     // 首条消息发出后乐观更新侧边栏标题（后端稍后会异步生成更准的智能标题）
-    const curSession = sessions.find((s: any) => s.session_id === sessionId)
-    if (curSession && ["", "default", "新对话"].includes((curSession.label || "").trim())) {
+    // 懒创建的会话此刻可能还不在 sessions 列表里：找不到时补一条占位，保证立即显示临时标题而非「新对话」
+    const curSession = sessions.find((s: any) => s.session_id === sid)
+    if (!curSession || ["", "default", "新对话"].includes((curSession.label || "").trim())) {
       const optimisticTitle = text.slice(0, 12) || "新对话"
-      setSessions((prev) => prev.map((s: any) => s.session_id === sessionId ? { ...s, label: optimisticTitle } : s))
+      setSessions((prev) => {
+        if (prev.some((s: any) => s.session_id === sid)) {
+          return prev.map((s: any) => s.session_id === sid ? { ...s, label: optimisticTitle } : s)
+        }
+        return [{ session_id: sid, label: optimisticTitle, preview: text, msg_count: 1, created_at: '' }, ...prev]
+      })
     }
 
     try {
       const res = await apiFetch(`${apiBase}/chat`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ message: finalMessage, session_id: sessionId, model_provider: modelProvider, mode: backendMode, thinking: thinking, model: modelName }),
+        body: JSON.stringify({ message: finalMessage, session_id: sid, model_provider: modelProvider, mode: backendMode, thinking: thinking, model: modelName }),
       })
 
       if (!res.ok) {
@@ -778,9 +809,10 @@ function App() {
         return next
       })
       // 刷新会话列表（更新预览文字）；后端智能标题为异步生成且可能较慢，错开多次刷新兜底
-      fetchSessions()
-      setTimeout(fetchSessions, 3000)
-      setTimeout(fetchSessions, 8000)
+      await refreshPreservingTitle(sid)
+      setTimeout(() => refreshPreservingTitle(sid), 3000)
+      setTimeout(() => refreshPreservingTitle(sid), 8000)
+      setTimeout(() => refreshPreservingTitle(sid), 15000)
     } catch (e: any) {
       setMessages((prev) => {
         const next = [...prev]
@@ -1429,7 +1461,14 @@ function App() {
       >+ 新建会话</Button>
           </div>
           <nav className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
-            {groupSessions(sessions).map(([groupName, items]: [string, any[]]) => (
+            {/* 虚拟新对话（未发首条消息前不落库，不在历史里产生记录） */}
+            {sessionId === '' && (
+              <div className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                <span className="flex-1 truncate">新对话</span>
+              </div>
+            )}
+            {/* 历史列表只显示真正有过消息的会话（空会话不占记录位） */}
+            {groupSessions(sessions.filter((s: any) => (s.msg_count || 0) > 0 || s.session_id === sessionId)).map(([groupName, items]: [string, any[]]) => (
               <div key={groupName}>
                 <p className="px-3 pt-3 pb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">{groupName}</p>
                 {items.map((s: any) => (
@@ -1534,17 +1573,17 @@ function App() {
             </button>
           </div>
 
-          {/* 右：3 个图标按钮 + 用户头像菜单 */}
+          {/* 右：文字按钮 + 用户头像菜单 */}
           <div className="flex items-center gap-1 shrink-0">
             <button onClick={() => setShowKeySettings(true)} title="模型密钥设置"
-              className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
-            >🔑</button>
+              className={`px-2.5 h-8 rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+            >密钥</button>
             <button onClick={() => setPage('hub')} title="返回功能入口"
-              className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
-            >🏠</button>
+              className={`px-2.5 h-8 rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+            >主页</button>
             <button onClick={() => setIsDark(!isDark)} title="切换主题"
-              className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
-            >{isDark ? '☀️' : '🌙'}</button>
+              className={`px-2.5 h-8 rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}
+            >{isDark ? '浅色' : '深色'}</button>
 
             {/* 用户头像（含点击下拉菜单：模型切换、个人中心、MBTI、看板、清空、面试归档、薄弱点、退出） */}
             <div className="relative ml-1">
