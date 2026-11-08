@@ -1,4 +1,4 @@
-# Web framework
+﻿# Web framework
 fastapi>=0.115,<1.0
 uvicorn>=0.34,<1.0
 python-multipart>=0.0.20
@@ -21,6 +21,10 @@ chromadb>=1.5,<2.0
 # Hybrid retrieval（BM25 稀疏检索 + RRF 融合）
 rank-bm25>=0.2.2
 jieba>=0.42.1
+
+# Reranker（精排）：sentence-transformers 交叉编码器；
+# 附带引入 transformers / torch(CPU) / scikit-learn / scipy / joblib / huggingface-hub
+sentence-transformers>=6.0,<7.0
 
 # PDF loader
 pypdf>=5.0,<6.0

@@ -26,8 +26,12 @@ from .vector_store import get_vector_store
 
 logger = get_logger(__name__)
 
-# 索引与查询共享同一 Chroma collection，加锁避免并发读写冲突
-# （文件监视器在后台线程触发重索引，可能与主请求的 RAG 查询并发）
+# Obsidian collection 的读/写互斥锁。
+# 文件监视器会在后台线程触发重索引，而增量更新是「先删旧 chunk、再写新 chunk」，
+# 窗口期内该笔记整篇不在索引里；若此时主请求正在检索，会读到不完整状态（表现为偶发漏答）。
+#   · 写侧：index_obsidian() 全程持锁
+#   · 读侧：retrieve_obsidian() 的检索段、query_obsidian() 的空库判断持锁
+#   · 纯内存计算（RRF 融合、Prompt 拼接、LLM 生成）一律留在锁外，避免拉长持锁时间
 _obsidian_index_lock = threading.Lock()
 
 
@@ -472,22 +476,39 @@ _obsidian_llm_provider = None
 
 
 def retrieve_obsidian(question: str, k: int | None = None):
-    """Obsidian 检索公共路径：dense 语义检索 + BM25 稀疏检索 → RRF 融合。
+    """Obsidian 两阶段检索：dense + BM25 宽召回 → RRF 融合 → Cross-Encoder 精排。
+
+    1) 召回阶段：dense 语义检索与 BM25 稀疏检索各取 RECALL_N 条（宽召回）
+    2) 融合阶段：RRF 对两路排名做融合去重，得到候选集
+    3) 精排阶段：Cross-Encoder 对候选逐条算 query-文档相关性，取 top_k（严筛选）
 
     返回 (dense_docs, bm25_docs, merged_docs)，供 query 与 eval 共用，
     避免多处重复检索逻辑（此前 query_obsidian / eval_retrieval / eval_generation 各写一份）。
 
-    dense_docs / bm25_docs 供评测分层统计（单独命中率 vs 融合命中率），
-    merged_docs 是最终送 LLM 的上下文。
+    dense_docs / bm25_docs 是各路的原始召回结果（供评测分层统计单独命中率），
+    merged_docs 是最终送 LLM 的上下文（已经过精排）。
     """
     from .hybrid import fuse_documents, get_bm25_retriever
 
     store = get_vector_store(OBSIDIAN_COLLECTION)
     top_k = k or config.RETRIEVE_TOP_K
+    recall_n = max(config.RETRIEVE_RECALL_N, top_k)
 
-    dense_docs = store.search(question, k=top_k)
-    bm25_docs = get_bm25_retriever(store).search(question, k=top_k)
-    merged = fuse_documents(dense_docs, bm25_docs, top_n=top_k)
+    # 与 index_obsidian 互斥：避免在「删旧 chunk → 写新 chunk」的窗口期读到不完整索引
+    with _obsidian_index_lock:
+        dense_docs = store.search(question, k=recall_n)
+        bm25_docs = get_bm25_retriever(store).search(question, k=recall_n)
+
+    # RRF 融合是纯内存计算，放在锁外执行，尽量缩短持锁时间
+    candidates = fuse_documents(dense_docs, bm25_docs, top_n=recall_n)
+
+    # 精排：把候选交给 Cross-Encoder 重排（失败自动降级为原顺序）
+    if config.RERANK_ENABLED:
+        from .reranker import rerank
+        merged = rerank(question, candidates, top_n=top_k)
+    else:
+        merged = candidates[:top_k]
+
     return dense_docs, bm25_docs, merged
 
 
@@ -501,7 +522,10 @@ def query_obsidian(question: str, k: int | None = None) -> str:
     global _obsidian_chain, _obsidian_llm, _obsidian_llm_provider
 
     store = get_vector_store(OBSIDIAN_COLLECTION)
-    if store.count() == 0:
+    # 空库判断也需互斥：force 全量重建会删除并重建 collection，期间 count() 可能异常
+    with _obsidian_index_lock:
+        is_empty = store.count() == 0
+    if is_empty:
         return "Obsidian 知识库尚未索引，请先调用 POST /obsidian/index 进行索引。"
 
     # 混合检索：dense 语义检索 + BM25 稀疏检索 → RRF 融合

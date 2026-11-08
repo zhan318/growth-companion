@@ -23,7 +23,13 @@ class KnowledgeConfig:
     CHUNK_OVERLAP: int = int(os.getenv("KNOWLEDGE_CHUNK_OVERLAP", "50"))
 
     # ── 检索 ──
+    # 最终送 LLM 的上下文条数
     RETRIEVE_TOP_K: int = int(os.getenv("KNOWLEDGE_RETRIEVE_TOP_K", "3"))
+    # 召回池大小：dense / BM25 各自召回条数，经 RRF 融合后交精排筛选。
+    # 需大于 RETRIEVE_TOP_K，才有「宽召回 + 严精排」两阶段检索的意义。
+    RETRIEVE_RECALL_N: int = int(os.getenv("KNOWLEDGE_RETRIEVE_RECALL_N", "20"))
+    # 精排开关：模型不可用时可一键回退（关闭后行为与改造前一致）
+    RERANK_ENABLED: bool = os.getenv("KNOWLEDGE_RERANK_ENABLED", "true").lower() != "false"
 
     # ── Embedding 模型 ──
     # 可选: "default" (ChromaDB内置) | "sentence-transformers" | "api"
