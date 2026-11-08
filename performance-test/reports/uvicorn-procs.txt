@@ -1,6 +1,6 @@
-﻿16148 | python.exe | E:\pythonprojects\AI-Workspace\.venv\Scripts\python.exe -m uvicorn mock.mock_llm:app --host 127.0.0.1 --port 18001 --log-level warning
+﻿16148 | python.exe | E:\pythonprojects\growth-companion\.venv\Scripts\python.exe -m uvicorn mock.mock_llm:app --host 127.0.0.1 --port 18001 --log-level warning
 1432 | python.exe | "E:\anaconda\python.exe" -m uvicorn mock.mock_llm:app --host 127.0.0.1 --port 18001 --log-level warning
-4192 | python.exe | E:\pythonprojects\AI-Workspace\.venv\Scripts\python.exe -m uvicorn mock.mock_external:app --host 127.0.0.1 --port 18002 --log-level warning
+4192 | python.exe | E:\pythonprojects\growth-companion\.venv\Scripts\python.exe -m uvicorn mock.mock_external:app --host 127.0.0.1 --port 18002 --log-level warning
 19060 | python.exe | "E:\anaconda\python.exe" -m uvicorn mock.mock_external:app --host 127.0.0.1 --port 18002 --log-level warning
 15124 | powershell.exe | C:\windows\System32\WindowsPowerShell\v1.0\powershell.EXE -NoProfile -NonInteractive -Command "if (-not (Get-Variable -Name CODEBUDDY_SAFE_DELETE_PS_READY -Scope Global -ErrorAction SilentlyContinue)) {
     $Global:CODEBUDDY_SAFE_DELETE_PS_READY = $true
@@ -441,5 +441,5 @@
     }
 }
 $all = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match \"uvicorn|api:app|locust\" } | ForEach-Object { \"$($_.ProcessId) | $($_.Name) | $($_.CommandLine)\" }
-if ($all) { $all | Set-Content \"E:\pythonprojects\AI-Workspace\performance-test\reports\uvicorn-procs.txt\" -Encoding UTF8 } else { \"none\" | Set-Content \"E:\pythonprojects\AI-Workspace\performance-test\reports\uvicorn-procs.txt\" }
+if ($all) { $all | Set-Content \"E:\pythonprojects\growth-companion\performance-test\reports\uvicorn-procs.txt\" -Encoding UTF8 } else { \"none\" | Set-Content \"E:\pythonprojects\growth-companion\performance-test\reports\uvicorn-procs.txt\" }
 Write-Host \"done\""

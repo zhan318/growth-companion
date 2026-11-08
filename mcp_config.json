@@ -3,7 +3,7 @@
     "filesystem": {
       "type": "stdio",
       "command": "node",
-      "args": ["E:/pythonprojects/AI-Workspace/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js", "D:/agent/obsidian/知识库"]
+      "args": ["E:/pythonprojects/growth-companion/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js", "D:/agent/obsidian/知识库"]
     }
   }
 }

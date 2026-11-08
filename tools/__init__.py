@@ -197,8 +197,6 @@ registry = ToolRegistry()
 
 # 导入工具模块（导入时执行装饰器，自动注册）
 # 以下 import 均为副作用导入：触发 @registry.register() 装饰器，不直接使用名称
-import knowledge  # noqa: E402, F401
-
 from . import (  # noqa: E402
     calculator,  # noqa: E402, F401
     hotlist,  # noqa: E402, F401
