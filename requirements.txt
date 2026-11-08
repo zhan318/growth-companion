@@ -1,4 +1,4 @@
-﻿# Web framework
+# Web framework
 fastapi>=0.115,<1.0
 uvicorn>=0.34,<1.0
 python-multipart>=0.0.20

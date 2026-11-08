@@ -13,6 +13,9 @@ __pycache__/
 .env.*
 !.env.example
 
+# MCP 本机配置（含本机绝对路径，模板见 mcp_config.example.json）
+mcp_config.json
+
 # OS
 .DS_Store
 Thumbs.db
