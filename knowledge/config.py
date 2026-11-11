@@ -32,8 +32,13 @@ class KnowledgeConfig:
     RERANK_ENABLED: bool = os.getenv("KNOWLEDGE_RERANK_ENABLED", "true").lower() != "false"
 
     # ── Embedding 模型 ──
-    # 可选: "default" (ChromaDB内置) | "sentence-transformers" | "api"
-    EMBEDDING_MODEL: str = os.getenv("KNOWLEDGE_EMBEDDING", "default")
+    # 可选: "default" (ChromaDB内置, 英文优化) | "sentence-transformers" (本地中文模型) | "deepseek"
+    # 默认用本地中文模型：all-MiniLM-L6-v2 对中文 query 几乎失效（dense 命中率实测 4.8%）
+    EMBEDDING_MODEL: str = os.getenv("KNOWLEDGE_EMBEDDING", "sentence-transformers")
+    # sentence-transformers 具体模型名（BGE 中文小模型，512 维，CPU 可跑）
+    EMBEDDING_ST_MODEL: str = os.getenv(
+        "KNOWLEDGE_EMBEDDING_ST_MODEL", "BAAI/bge-small-zh-v1.5"
+    )
 
     # ── 向量数据库 ──
     # 可选: "chroma" | "faiss" (预留)
