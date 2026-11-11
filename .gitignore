@@ -42,6 +42,9 @@ nul
 # WorkBuddy 工作目录（私有记忆与运行时数据，不进版本库）
 .workbuddy/
 eval/reports/answers.jsonl
+# e2e 评测运行产物（含问答内容与检索出的笔记片段，不进版本库）
+eval/reports/e2e-answers.jsonl
+eval/reports/e2e-run.log
 
 # 备份文件（临时产物，不进版本库）
 *-bak.md
