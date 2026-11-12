@@ -1,5 +1,6 @@
 """文档加载器 —— 基于 LangChain Loader"""
 
+import fnmatch
 from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
@@ -76,8 +77,18 @@ def is_path_excluded(rel_path: str, excludes) -> bool:
       - 文件名等于某项（如 "API.md"）
       - 相对路径等于某项（如 "secret/api.md"）
       - 路径中包含某项作为文件夹名（如 ".trash"）
+      - 通配匹配：项含 * ? [ ] 时，对文件名与相对路径做 fnmatch 匹配
+        （如 "API*" 匹配 "API密钥.md"，"*密钥*" 匹配任意含「密钥」的文件）
     """
     p = Path(rel_path)
     base = p.name
     parts = set(p.parts)
-    return any(ex in (base, rel_path) or ex in parts for ex in excludes)
+    for ex in excludes:
+        # 精确匹配（保持原语义）
+        if ex in (base, rel_path) or ex in parts:
+            return True
+        # 通配匹配（仅当项含通配符时才走，避免误伤精确项）
+        if any(ch in ex for ch in "*?[]"):
+            if fnmatch.fnmatchcase(base, ex) or fnmatch.fnmatchcase(rel_path, ex):
+                return True
+    return False

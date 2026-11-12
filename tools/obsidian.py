@@ -100,7 +100,7 @@ def read_obsidian_note(note: str) -> str:
         note: 笔记名称或路径，例如 "python之路" 或 "外语学习/单词表.md"
     """
     logger.info("Obsidian 读取工具被调用: %s", note)
-    from config import OBSIDIAN_EXCLUDE, OBSIDIAN_VAULT_DIR
+    from config import OBSIDIAN_WRITE_BLOCK, OBSIDIAN_VAULT_DIR
     from knowledge.loader import is_path_excluded
 
     vault = OBSIDIAN_VAULT_DIR
@@ -116,7 +116,7 @@ def read_obsidian_note(note: str) -> str:
         rel = str(candidate.resolve().relative_to(vault_path))
     except Exception:
         rel = candidate.name
-    if is_path_excluded(rel, OBSIDIAN_EXCLUDE):
+    if is_path_excluded(rel, OBSIDIAN_WRITE_BLOCK):
         return "该文件被排除清单保护，无法读取（可能含敏感信息）。"
 
     try:
@@ -136,7 +136,7 @@ def save_note_to_vault(note: str, content: str) -> dict:
     Returns:
         {"ok": bool, "message": str, "path": str}  # path 为 vault 内相对路径（失败时为空）
     """
-    from config import OBSIDIAN_EXCLUDE, OBSIDIAN_VAULT_DIR
+    from config import OBSIDIAN_WRITE_BLOCK, OBSIDIAN_VAULT_DIR
     from knowledge.loader import is_path_excluded
 
     vault = OBSIDIAN_VAULT_DIR
@@ -163,7 +163,7 @@ def save_note_to_vault(note: str, content: str) -> dict:
         rel = str(p.relative_to(vault_path))
     except Exception:
         rel = p.name
-    if is_path_excluded(rel, OBSIDIAN_EXCLUDE):
+    if is_path_excluded(rel, OBSIDIAN_WRITE_BLOCK):
         return {"ok": False, "message": "该文件被排除清单保护，无法写入（可能含敏感路径）。", "path": ""}
 
     # 写入

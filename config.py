@@ -74,10 +74,17 @@ GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "http://127.0.0.1:8000/au
 OBSIDIAN_VAULT_DIR = os.getenv("OBSIDIAN_VAULT_DIR", "")
 # 独立向量集合名，与 knowledge/docs 隔离，避免知识库问答串味
 OBSIDIAN_COLLECTION = os.getenv("OBSIDIAN_COLLECTION", "obsidian")
-# 排除清单：这些文件/文件夹永不被索引或读取（隐私保护，如存放 API Key 的文件）
+# 排除清单：这些文件/文件夹永不被索引（隐私 + 降噪，如存放 API Key 的文件、自动生成的笔记）
 # 支持：文件名（API.md）、相对路径（secret/api.md）、文件夹名（.trash）
+# 注意：只管「索引排除」，不管读写。读写保护见下面的 OBSIDIAN_WRITE_BLOCK。
 OBSIDIAN_EXCLUDE = [
-    p.strip() for p in os.getenv("OBSIDIAN_EXCLUDE", "API.md").split(",") if p.strip()
+    p.strip() for p in os.getenv("OBSIDIAN_EXCLUDE", "API.md,API*,*密钥*,*账密*,.trash").split(",") if p.strip()
+]
+# 读写保护清单：这些文件永不被「读笔记 / 写笔记」工具触碰（隐私红线，如存密钥的文件）。
+# 与 OBSIDIAN_EXCLUDE 分开：索引排除≠写入保护，混用会误伤正常写入
+# （曾导致 /notes/save 的目标目录「工作台笔记」被列进排除清单后无法写入）。
+OBSIDIAN_WRITE_BLOCK = [
+    p.strip() for p in os.getenv("OBSIDIAN_WRITE_BLOCK", "API.md").split(",") if p.strip()
 ]
 
 # ========== Obsidian 实时文件监视器 ==========
