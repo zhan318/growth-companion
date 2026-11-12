@@ -93,7 +93,7 @@ class WorkstationUser(HttpUser):
             json={
                 "message": message,
                 "session_id": self.session_id,
-                "model_provider": "deepseek",
+                "model_provider": "glm",
                 "mode": "workspace",
             },
             headers=self.headers,
@@ -123,7 +123,7 @@ class WorkstationUser(HttpUser):
             json={
                 "message": question,
                 "session_id": self.session_id,
-                "model_provider": "deepseek",
+                "model_provider": "glm",
                 "mode": "workspace",
             },
             headers=self.headers,
@@ -173,7 +173,7 @@ class LongSessionUser(HttpUser):
             json={
                 "message": message,
                 "session_id": self.session_id,
-                "model_provider": "deepseek",
+                "model_provider": "glm",
                 "mode": "workspace",
             },
             headers=self.headers,
