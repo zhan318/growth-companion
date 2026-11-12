@@ -9,14 +9,19 @@ logger = get_logger(__name__)
 
 
 def _get_quiz_summary_dir() -> Path | None:
-    """获取疑难总结目录路径"""
+    """获取疑难总结目录路径（模糊匹配：目录名包含「疑难总结」即可，兼容改名）"""
     from config import OBSIDIAN_VAULT_DIR
 
     if not OBSIDIAN_VAULT_DIR:
         return None
     vault = Path(OBSIDIAN_VAULT_DIR)
-    quiz_dir = vault / "AI学习" / "疑难总结"
-    return quiz_dir if quiz_dir.exists() else None
+    ai_dir = vault / "AI学习"
+    if not ai_dir.is_dir():
+        return None
+    for d in sorted(ai_dir.iterdir()):
+        if d.is_dir() and "疑难总结" in d.name:
+            return d
+    return None
 
 
 def _parse_questions(content: str) -> list[dict]:
