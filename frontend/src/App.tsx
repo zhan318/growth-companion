@@ -49,7 +49,7 @@ function App() {
   // ── 认证状态 ──
   const [token, setToken] = useState(() => localStorage.getItem('token') || '')
   const [sessionId, setSessionId] = useState(() => localStorage.getItem('session_id') || '')
-  const [userId, setUserId] = useState(() => Number(localStorage.getItem('user_id') || '0'))
+  const [_userId, setUserId] = useState(() => Number(localStorage.getItem('user_id') || '0'))
   const [username, setUsername] = useState(() => localStorage.getItem('username') || '')
   const [page, setPage] = useState<'auth' | 'hub' | 'chat' | 'profile' | 'mbti' | 'dashboard'>(token ? 'hub' : 'auth')
 
