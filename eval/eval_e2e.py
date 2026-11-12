@@ -144,7 +144,7 @@ def expect_desc(case: dict) -> str:
     if cat == "read_note":
         return "应调用读取笔记工具（read_obsidian_note）返回笔记原文内容。"
     if cat == "write_note":
-        return "应调用写笔记工具（write_obsidian_note）把指定内容写入笔记。"
+        return "应直接生成笔记 Markdown 正文作为回复（不调用任何工具），可提醒用户用界面「存为笔记」按钮保存。"
     tools = "、".join(case["expected_tools"])
     return f"应调用工具：{tools}，并基于工具返回结果回答。"
 

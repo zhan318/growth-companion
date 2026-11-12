@@ -12,7 +12,6 @@ def test_registry_contains_expected_tools():
         "get_hotlist",
         "search_obsidian_notes",
         "read_obsidian_note",
-        "write_obsidian_note",
         "mock_interview",
         "knowledge_search",
         "web_search",

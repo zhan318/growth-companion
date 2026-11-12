@@ -410,7 +410,6 @@ curl -X POST "http://127.0.0.1:8000/chat" \
 | `knowledge_search` | `rag_tool.py` | 检索上传文档知识库 |
 | `search_obsidian_notes` | `obsidian.py` | 语义检索个人笔记库 |
 | `read_obsidian_note` | `obsidian.py` | 读取指定笔记原文 |
-| `write_obsidian_note` | `obsidian.py` | 创建 / 覆盖笔记 |
 | `mock_interview` | `mock_interview.py` | 模拟面试出题 |
 | `mcp_{server}_{tool}` | `mcp_client.py` | 外部 MCP 工具（连接后动态注册） |
 
@@ -445,7 +444,7 @@ async def get_news_async(topic: str) -> str:
 ### Obsidian 笔记库
 1. 在 `.env` 中设置 `OBSIDIAN_VAULT_DIR` 指向 vault 目录
 2. 服务启动时会自动检查并索引；也可手动调用 `POST /obsidian/index`
-3. 之后 Agent 会在需要时自动调用 `search_obsidian_notes` / `read_obsidian_note` / `write_obsidian_note`
+3. 之后 Agent 会在需要时自动调用 `search_obsidian_notes` / `read_obsidian_note`；写笔记则由 Agent 生成 Markdown 正文，用户用界面「存为笔记」按钮保存
 4. vault 文件变更由监视器自动触发重索引（`OBSIDIAN_WATCHER_ENABLED=false` 可关闭）
 
 > 排除清单（`OBSIDIAN_EXCLUDE`）中的文件永不被索引或读取，用于保护存放密钥等敏感信息的文件。

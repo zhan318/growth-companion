@@ -129,7 +129,10 @@ def read_obsidian_note(note: str) -> str:
 
 
 def save_note_to_vault(note: str, content: str) -> dict:
-    """把笔记写入 Obsidian vault（公共函数，Agent 工具与 HTTP 接口共用）。
+    """把笔记写入 Obsidian vault（供 HTTP 接口使用，如 /notes/save）。
+
+    说明：Agent 不再自动写盘——写笔记统一走前端「存为笔记」按钮调用本函数，
+    从源头杜绝 Agent 误判导致的未确认写盘。
 
     安全检查：路径必须在 vault 内，受排除清单保护。
 
@@ -182,20 +185,3 @@ def save_note_to_vault(note: str, content: str) -> dict:
         return {"ok": False, "message": f"写入笔记失败: {e}", "path": ""}
 
 
-@registry.register(
-    description="在 Obsidian 知识库中创建新笔记或覆盖已有笔记。"
-                "当用户要求「帮我写一篇笔记」「新建一篇笔记」「记录到知识库」等时调用。"
-                "写入路径限制在 Obsidian vault 内，受排除清单保护。"
-)
-def write_obsidian_note(note: str, content: str) -> str:
-    """在 Obsidian vault 中写入笔记。
-
-    Args:
-        note: 笔记名称或路径，例如 "学习笔记/AI趋势" 或 "新想法"（自动添加 .md）
-        content: 要写入的 Markdown 内容
-    """
-    logger.info("Obsidian 写入工具被调用: %s (%d 字符)", note, len(content))
-    result = save_note_to_vault(note, content)
-    if result["ok"]:
-        return f"{result['message']}\n路径: {result['path']}\n大小: {len(content)} 字符"
-    return result["message"]

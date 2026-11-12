@@ -5,7 +5,7 @@
 {"question": "微博热搜上现在都在讨论什么？", "expected_tools": ["get_hotlist"], "category": "tool", "note": "热榜-微博路由（与 GitHub 同工具不同参数）"}
 {"question": "2199 减去 187 再除以 3 结果是多少？", "expected_tools": ["calculate"], "category": "tool", "note": "多步计算路由"}
 {"question": "帮我看看「学习方法及路线」这篇笔记写了什么", "expected_tools": ["read_obsidian_note"], "category": "read_note", "note": "读笔记工具路由"}
-{"question": "帮我新建一篇笔记，标题是「e2e-测试笔记」，内容写：这是一条端到端测试记录", "expected_tools": ["write_obsidian_note"], "category": "write_note", "note": "写笔记工具路由（测试后自动删除该笔记）"}
+{"question": "帮我新建一篇笔记，标题是「e2e-测试笔记」，内容写：这是一条端到端测试记录", "expected_tools": [], "category": "write_note", "note": "写笔记不再自动写盘，应直接生成 Markdown 正文（不调工具）"}
 {"question": "你好，请介绍一下你自己能做什么", "expected_tools": [], "category": "chat", "note": "闲聊不应调工具"}
 {"question": "用一句话夸夸你自己", "expected_tools": [], "category": "chat", "note": "闲聊不应调工具"}
 {"question": "谢谢，先这样，拜拜", "expected_tools": [], "category": "chat", "note": "结束语不应调工具"}
