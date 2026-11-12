@@ -202,7 +202,8 @@ def _index_obsidian_impl(force: bool = False) -> dict:
 
     - 排除 OBSIDIAN_EXCLUDE 清单中的文件/文件夹（如存放 API Key 的 API.md），
       这些文件永不被向量化，保证隐私不外泄。
-    - 按文件 mtime + 确定性 id 实现增量：未变更的文件跳过，变更/新增的更新，
+    - 按文件 mtime（容差 1e-6s 比较，规避 Chroma 序列化导致的 float 精度丢失）+ 确定性 id 实现增量：
+      未变更且切片数一致的文件跳过，变更/新增的更新，切片缺失（即使 mtime 未变）也会重建补回，
       已删除的文件从向量库移除。force=True 时清空后全量重建。
 
     Returns:
@@ -300,8 +301,12 @@ def _index_obsidian_impl(force: bool = False) -> dict:
 
     # 新增 / 更新
     for doc_id, info in desired.items():
-        if doc_id in old_by_doc and old_mtime.get(doc_id) == info["mtime"]:
-            # 未变更，跳过
+        if (
+            doc_id in old_by_doc
+            and abs(old_mtime.get(doc_id, 0.0) - info["mtime"]) < 1e-6
+            and len(old_by_doc[doc_id]) == len(info["ids"])
+        ):
+            # 未变更且切片数一致，跳过（切片缺失时即使 mtime 未变也走下方重建补回）
             stats["indexed_files"] += 1
             stats["chunks"] += len(info["ids"])
             continue
