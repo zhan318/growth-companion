@@ -25,6 +25,10 @@ node_modules/
 frontend/node_modules/
 frontend/dist/         # 多阶段构建中重新生成
 
+# 本地向量索引与上传文档（运行时挂载数据卷，不烤进镜像）
+knowledge/chroma_db/
+knowledge/docs/
+
 # 误生成产物 / 系统文件
 nul
 .DS_Store

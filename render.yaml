@@ -7,3 +7,17 @@ services:
     envVars:
       - key: DEEPSEEK_API_KEY
         sync: false
+      - key: GLM_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: glm
+      - key: FALLBACK_LLM_PROVIDER
+        value: deepseek
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OBSIDIAN_VAULT_DIR
+        sync: false
+      - key: OBSIDIAN_EXCLUDE
+        value: API.md
+      - key: OBSIDIAN_WRITE_BLOCK
+        value: API.md

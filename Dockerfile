@@ -4,7 +4,8 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --silent
+# 用国内镜像源：容器默认 registry.npmjs.org 在构建时走代理常被拦，本机 npm 同为 npmmirror
+RUN npm ci --silent --registry=https://registry.npmmirror.com/
 COPY frontend/ ./
 RUN npm run build
 # 产物：/frontend/dist/
@@ -23,8 +24,11 @@ RUN apt-get update -qq \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 依赖
+# 先装 CPU 版 torch：sentence-transformers 默认拉 CUDA 版（约 1GB+ 的 CUDA toolkit / cuDNN），
+# 纯 CPU 容器完全用不上且镜像暴涨。先装 CPU torch 让依赖满足，后续不会再装 CUDA 版。
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
 
 # 后端代码
 COPY . .
