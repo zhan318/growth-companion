@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """检索层评测：Recall@K / 命中率（零成本，不调用 LLM）
 
 评测对象：Obsidian RAG 的真实检索路径（dense 语义检索 + BM25 稀疏检索 → RRF 融合），
@@ -47,7 +46,7 @@ def main():
     args = ap.parse_args()
 
     golden_path = Path(__file__).resolve().parent / "golden_set.jsonl"
-    items = [json.loads(l) for l in golden_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    items = [json.loads(line) for line in golden_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.limit:
         items = items[: args.limit]
 
@@ -71,7 +70,6 @@ def main():
             "n_dense": len(dense), "n_bm25": len(bm25), "n_merged": len(merged),
         })
 
-    n = len(results)
     valid = [r for r in results if r["expected"]]          # 期望有文档的（计入命中率）
     nin = [r for r in results if not r["expected"]]        # 不在库（预期 0 命中，防幻觉项）
     nv = len(valid)
@@ -109,7 +107,7 @@ def main():
         print(f"     期望: {r['expected']}")
         print(f"     实际 top: {r['merged_top'][:3]}")
 
-    print(f"\n===== not_in_kb（防幻觉项，预期 0 命中）=====")
+    print("\n===== not_in_kb（防幻觉项，预期 0 命中）=====")
     for r in nin:
         print(f"  Q: {r['q']} → 检出 {r['n_merged']} 条: {r['merged_top'][:2]}")
 

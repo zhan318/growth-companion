@@ -21,11 +21,10 @@
 import json
 import os
 import random
-import time
 import uuid
 from pathlib import Path
 
-from locust import HttpUser, between, events, tag, task
+from locust import HttpUser, between, tag, task
 
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 TOKEN = os.getenv("TOKEN", "")

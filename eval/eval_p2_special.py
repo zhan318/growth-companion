@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """P2 特殊模式真机测试：模拟面试模式 + 上下文滚动摘要压缩
 
 这两块是 e2e / http 冒烟没覆盖的逻辑，且各自有特殊性：
@@ -11,6 +10,7 @@
     eval/reports/p2-report.md
 """
 
+import contextlib
 import json
 import sys
 import time
@@ -19,10 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-try:
+with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
 
 INTERVIEW_SID = "p2_interview_test"
 COMPRESS_SID = "p2_compress_test"

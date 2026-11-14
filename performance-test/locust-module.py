@@ -15,12 +15,10 @@
     USERNAME/PASSWORD 登录凭据
 """
 
-import json
 import os
 import time
-import uuid
 
-from locust import HttpUser, between, events, tag, task
+from locust import HttpUser, between, tag, task
 
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 TOKEN = os.getenv("TOKEN", "")
@@ -31,7 +29,7 @@ MODULE = os.getenv("MODULE", "")
 
 
 def _active(mod: str) -> bool:
-    return not MODULE or MODULE == mod
+    return not MODULE or mod == MODULE
 
 MBTI_ANSWERS = [1] * 32  # 32 题全选 A（合法值）
 

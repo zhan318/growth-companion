@@ -6,10 +6,8 @@
 """
 
 import argparse
-import concurrent.futures
 import json
 import statistics
-import sys
 import time
 import urllib.request
 from pathlib import Path

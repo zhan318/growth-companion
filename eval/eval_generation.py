@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """生成层评测：LLM-as-a-Judge（指标对齐 RAGAS）
 
 评测对象：Obsidian RAG 完整链路（检索 + DeepSeek 生成），
@@ -26,10 +25,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from langchain_openai import ChatOpenAI
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import StrOutputParser  # noqa: E402
+from langchain_openai import ChatOpenAI  # noqa: E402
 
-from knowledge.pipeline import RAG_PROMPT, _format_context, retrieve_obsidian
+from knowledge.pipeline import RAG_PROMPT, _format_context, retrieve_obsidian  # noqa: E402
 
 JUDGE_SYSTEM = (
     "你是一名严格的 RAG 系统评测裁判。你会收到【问题】【检索到的上下文】【模型答案】【期望答案要点】。\n"
@@ -105,7 +104,7 @@ def main():
     args = ap.parse_args()
 
     golden_path = Path(__file__).resolve().parent / "golden_set.jsonl"
-    items = [json.loads(l) for l in golden_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    items = [json.loads(line) for line in golden_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if args.limit:
         items = items[: args.limit]
 
@@ -114,9 +113,9 @@ def main():
 
     done = {}
     if args.skip_generate and answers_path.exists():
-        for l in answers_path.read_text(encoding="utf-8").splitlines():
-            if l.strip():
-                d = json.loads(l)
+        for line in answers_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                d = json.loads(line)
                 done[d["question"]] = d
 
     print(f"生成层评测：{len(items)} 条（skip-generate={args.skip_generate}）")
@@ -166,7 +165,7 @@ def main():
         "",
         f"> 生成时间：{__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"> 评测集：{len(items)} 条 | 裁判：DeepSeek（指标对齐 RAGAS）",
-        f"> 链路：检索（语义+关键词兜底）→ DeepSeek 生成 → Judge 打分",
+        "> 链路：检索（语义+关键词兜底）→ DeepSeek 生成 → Judge 打分",
         "",
         "## 总体指标",
         "",

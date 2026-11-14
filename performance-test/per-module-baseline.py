@@ -10,7 +10,6 @@
 import argparse
 import json
 import statistics
-import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -53,7 +52,7 @@ def create_interview_session(token, n_messages=2):
 
 def run_case(args, name, label, method, path, token, body=None, sid=None):
     results = []
-    for i in range(args.runs):
+    for _i in range(args.runs):
         b = body
         if sid and isinstance(b, dict) and b.get("__sid__"):
             b = {k: v for k, v in b.items() if k != "__sid__"}

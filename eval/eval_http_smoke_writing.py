@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """HTTP 层「写盘接口」冒烟测试：补测会写 Obsidian vault 的接口
 
 覆盖（现有 eval_http_smoke.py 跳过的 4 个写盘接口）：
@@ -24,7 +23,7 @@
 """
 
 import argparse
-import json
+import contextlib
 import sys
 import time
 import uuid
@@ -35,10 +34,8 @@ import httpx
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-try:
+with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
 
 # 三个写盘产物的相对路径（vault 内），cleanup 按此删除
 EXPORT_FILE = "我的 MBTI 档案.md"

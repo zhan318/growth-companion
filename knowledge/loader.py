@@ -88,7 +88,8 @@ def is_path_excluded(rel_path: str, excludes) -> bool:
         if ex in (base, rel_path) or ex in parts:
             return True
         # 通配匹配（仅当项含通配符时才走，避免误伤精确项）
-        if any(ch in ex for ch in "*?[]"):
-            if fnmatch.fnmatchcase(base, ex) or fnmatch.fnmatchcase(rel_path, ex):
-                return True
+        if any(ch in ex for ch in "*?[]") and (
+            fnmatch.fnmatchcase(base, ex) or fnmatch.fnmatchcase(rel_path, ex)
+        ):
+            return True
     return False

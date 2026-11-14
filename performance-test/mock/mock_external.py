@@ -16,10 +16,8 @@
 """
 
 import asyncio
-import html as _html
 import os
 import random
-import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse

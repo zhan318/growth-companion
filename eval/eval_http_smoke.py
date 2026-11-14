@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """HTTP 层冒烟测试：把 e2e 没覆盖的接口全部走一遍
 
 覆盖范围（与 eval_e2e.py 互补）：
@@ -22,6 +21,7 @@
 """
 
 import argparse
+import contextlib
 import json
 import sys
 import time
@@ -33,10 +33,8 @@ import httpx
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-try:
+with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
 
 
 class Smoke:
@@ -152,7 +150,7 @@ class Smoke:
 
         # 24-26. 上传文档 RAG 全链路（刚才因维度不兼容坏掉的功能，重点回归）
         tmp_name = f"smoke-{suffix}.md"
-        files = {"file": (tmp_name, "红蓝冒烟测试文档：本文档用于验证上传索引链路，关键词是「青绿色测试」。".encode("utf-8"), "text/markdown")}
+        files = {"file": (tmp_name, "红蓝冒烟测试文档：本文档用于验证上传索引链路，关键词是「青绿色测试」。".encode(), "text/markdown")}
         self.req("上传文档", "POST", "/knowledge/upload", files=files)
         self.req("上传文档索引", "POST", "/knowledge/index", timeout=180)
         self.req("上传文档查询", "POST", "/knowledge/query", timeout=180,

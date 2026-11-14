@@ -6,7 +6,6 @@
 
 from knowledge.hybrid import rrf_fusion, tokenize_chinese
 
-
 # ── rrf_fusion ─────────────────────────────────────────────
 
 def test_rrf_fusion_basic():

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """端到端 Agent 评测（e2e）：路由准确率 + 响应耗时 + 答案质量（LLM-as-a-Judge）
 
 评测对象：Agent.run() 完整链路 —— 上下文组装 → ReAct 工具循环 → LLM 生成。
@@ -24,6 +23,7 @@
 """
 
 import argparse
+import contextlib
 import json
 import logging
 import re
@@ -34,10 +34,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-try:
+with contextlib.suppress(Exception):
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
 
 AGENT_LOGGER = "agent.agent"
 SESSION_PREFIX = "e2e_case"
@@ -99,8 +97,9 @@ def load_cases(only: str | None, limit: int) -> list[dict]:
 
 def build_judge():
     """Judge 模型：跟随全项目默认 provider（与 eval_generation 同源）。"""
-    from chatbot.chatbot import MODEL_PRESETS, get_default_provider
     from langchain_openai import ChatOpenAI
+
+    from chatbot.chatbot import MODEL_PRESETS, get_default_provider
 
     provider = get_default_provider()
     preset = MODEL_PRESETS[provider]

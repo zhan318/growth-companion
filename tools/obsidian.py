@@ -100,7 +100,7 @@ def read_obsidian_note(note: str) -> str:
         note: 笔记名称或路径，例如 "python之路" 或 "外语学习/单词表.md"
     """
     logger.info("Obsidian 读取工具被调用: %s", note)
-    from config import OBSIDIAN_WRITE_BLOCK, OBSIDIAN_VAULT_DIR
+    from config import OBSIDIAN_VAULT_DIR, OBSIDIAN_WRITE_BLOCK
     from knowledge.loader import is_path_excluded
 
     vault = OBSIDIAN_VAULT_DIR
@@ -139,7 +139,7 @@ def save_note_to_vault(note: str, content: str) -> dict:
     Returns:
         {"ok": bool, "message": str, "path": str}  # path 为 vault 内相对路径（失败时为空）
     """
-    from config import OBSIDIAN_WRITE_BLOCK, OBSIDIAN_VAULT_DIR
+    from config import OBSIDIAN_VAULT_DIR, OBSIDIAN_WRITE_BLOCK
     from knowledge.loader import is_path_excluded
 
     vault = OBSIDIAN_VAULT_DIR

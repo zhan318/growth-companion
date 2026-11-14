@@ -55,7 +55,7 @@ def rerank(query: str, docs: list, top_n: int = 3, threshold: float | None = Non
         logger.warning("精排模型不可用，降级为原顺序截断: %s", e)
         return docs[:top_n]
 
-    ranked = sorted(zip(docs, scores), key=lambda x: -float(x[1]))
+    ranked = sorted(zip(docs, scores, strict=True), key=lambda x: -float(x[1]))
     if threshold is not None:
         ranked = [(d, s) for d, s in ranked if float(s) >= threshold]
     return [d for d, _ in ranked[:top_n]]

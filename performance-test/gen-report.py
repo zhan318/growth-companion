@@ -12,7 +12,6 @@
 
 import csv
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -210,7 +209,7 @@ def main():
             late = sum(mems[-n // 3:]) / max(n // 3, 1)
             trend_pct = (late - early) / early * 100 if early else 0
             minutes = round(n * 5 / 60, 1)
-            A(f"| 指标 | 开始 | 结束 | 峰值 | 趋势 |")
+            A("| 指标 | 开始 | 结束 | 峰值 | 趋势 |")
             A("|---|---|---|---|---|")
             A(f"| 内存 RSS (MB) | {mems[0]:.0f} | {mems[-1]:.0f} | {max(mems):.0f} | "
               f"📈 **+{trend_pct:.0f}%**（前1/3→后1/3） |")

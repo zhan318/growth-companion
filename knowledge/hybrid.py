@@ -29,7 +29,7 @@ _STOP = {
     "过程", "遇到", "遇到过", "笔记", "内容", "直接", "记录", "担心", "试试", "告诉",
     "请问", "想问", "我想", "我的", "你的", "有没有", "一下", "一些", "之类", "让我",
     "看看", "帮我", "里面", "它们", "她们", "您",
-    "输入", "字体", "变成", "回来", "突然", "哪些",
+    "输入", "字体", "变成", "回来", "突然",
 }
 
 
@@ -126,7 +126,7 @@ class BM25Retriever:
         metas = data.get("metadatas") or []
         self._docs = [
             Document(page_content=t, metadata=m or {})
-            for t, m in zip(texts, metas)
+            for t, m in zip(texts, metas, strict=True)
         ]
         if self._docs:
             from rank_bm25 import BM25Okapi
