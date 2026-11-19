@@ -97,7 +97,7 @@
 │   ├── config.py               # 切片 / 检索 / Embedding / 向量库 配置
 │   ├── loader.py               # 文档加载（TXT / MD / PDF）+ 排除清单匹配
 │   ├── chunker.py              # 文本切片（递归切分 + 标题注入）
-│   ├── embeddings.py           # Embedding：Chroma 内置 / DeepSeek API 可切换
+│   ├── embeddings.py           # Embedding：本地 BGE 中文模型（白名单校验，配错启动即报错）
 │   ├── vector_store.py         # 向量存储（LangChain + Chroma 封装，多 collection 单例）
 │   ├── retriever.py            # 检索器 + 上下文格式化
 │   ├── hybrid.py               # 混合检索：BM25 + 中文分词 + RRF 融合
@@ -161,7 +161,7 @@ ReAct 循环（≤5 轮）：LLM 决策 → 执行工具 → 结果回填 messag
 | **增量索引** | `sha1(相对路径)` 作文档 ID，mtime 比对跳过未变文件，变更先删后写，消失则删 | 全量重索引开销大、频次受限 |
 | **上下文压缩** | 消息数超阈值触发滚动摘要，记录压缩边界，只保留最近若干条原文 | messages 无限膨胀导致 token 成本失控 |
 | **工具注册** | 装饰器从函数签名 + 类型注解推断 JSON Schema；async 版自动复用同名 schema | 手动维护 schema 与实现易脱节 |
-| **多级降级** | embedding 远程失败回本地；watchdog 缺库回轮询；jieba 缺库回 n-gram 分词 | 可选依赖缺失时功能整体不可用 |
+| **多级降级** | 精排模型不可用回退 RRF 顺序；watchdog 缺库回轮询；jieba 缺库回 n-gram 分词 | 可选依赖缺失时功能整体不可用 |
 | **写入优化** | SQLite WAL + `busy_timeout` + 批量单事务落库 | 高并发下写锁竞争与写放大 |
 
 ---
@@ -281,7 +281,11 @@ DEEPSEEK_API_KEY=sk-xxx
 # KNOWLEDGE_CHUNK_SIZE=500
 # KNOWLEDGE_CHUNK_OVERLAP=50
 # KNOWLEDGE_RETRIEVE_TOP_K=3
-# KNOWLEDGE_EMBEDDING=default  # default(Chroma 内置) | deepseek
+# 精排分数阈值：低于此值判定为「知识库无相关内容」（默认 0.2，由 golden 集校准）
+# KNOWLEDGE_RERANK_THRESHOLD=0.2
+# 嵌入模型（白名单校验，非法值启动即报错）：
+# KNOWLEDGE_EMBEDDING=sentence-transformers   # 本地中文模型（默认推荐）
+# KNOWLEDGE_EMBEDDING=default                 # ChromaDB 内置英文模型（中文检索几乎失效）
 # KNOWLEDGE_VECTOR_DB_DIR=knowledge/chroma_db
 
 # ── GitHub OAuth2.0（可选）──
@@ -306,7 +310,9 @@ DEEPSEEK_API_KEY=sk-xxx
 # BAIDU_HOT_URL=https://top.baidu.com/api/board?tab=realtime
 ```
 
-默认 Embedding 使用 ChromaDB 内置的 `all-MiniLM-L6-v2`（无需额外 Key）；若将 `KNOWLEDGE_EMBEDDING=deepseek` 且配置了 `DEEPSEEK_API_KEY`，则改用 DeepSeek Embedding API。
+默认 Embedding 使用本地中文模型 `BAAI/bge-small-zh-v1.5`（512 维，离线、零成本、CPU 可跑）。`KNOWLEDGE_EMBEDDING` 走白名单校验：只接受 `sentence-transformers`（推荐）与 `default`（ChromaDB 内置英文模型，中文检索几乎失效），其他值**启动即报错**，不会静默回退。DeepSeek 官方不提供 embedding 接口。
+
+每个 collection 的 metadata 会记录 **embedding 指纹**（模型标识 + 维度）。换过 embedding 模型却没重建索引时，启动阶段直接报错而不是静默返回无关结果；历史库（无指纹）首次打开会探测已存向量维度，一致则自动回填指纹。换 embedding 模型后必须删除对应 collection 重新索引（`delete_all` + 重新灌库）。
 
 ---
 
