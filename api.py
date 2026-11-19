@@ -97,11 +97,20 @@ async def lifespan(app: FastAPI):
             "建议在 .env 固定 JWT_SECRET：python -c \"import secrets; print(secrets.token_hex(32))\""
         )
 
+    # 关键配置校验：嵌入模型必须在白名单内，否则启动即失败。
+    # 注意：必须放在下面 Obsidian 索引的 try/except 之外 —— 那里会把异常降级成 warning，
+    # 配置错误若被吞掉，服务会带着「英文模型跑中文检索」的静默降级继续运行。
+    # 该函数只做字符串校验，不加载模型，零启动成本。
+    from knowledge.embeddings import validate_embedding_config
+    validate_embedding_config()
+
     if OBSIDIAN_VAULT_DIR and Path(OBSIDIAN_VAULT_DIR).exists():
+        # 指纹校验必须放在下面的 try 之外：collection 里存的是旧 embedding 模型
+        # 生成的向量时，检索会静默返回无关结果，必须在启动阶段直接阻断。
+        from config import OBSIDIAN_COLLECTION
+        from knowledge.vector_store import get_vector_store
+        store = get_vector_store(OBSIDIAN_COLLECTION)
         try:
-            from config import OBSIDIAN_COLLECTION
-            from knowledge.vector_store import get_vector_store
-            store = get_vector_store(OBSIDIAN_COLLECTION)
             if store.count() == 0:
                 logger.info("Obsidian collection 为空，启动时自动索引...")
                 result = index_obsidian(force=False)
