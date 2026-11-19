@@ -57,5 +57,12 @@ def rerank(query: str, docs: list, top_n: int = 3, threshold: float | None = Non
 
     ranked = sorted(zip(docs, scores, strict=True), key=lambda x: -float(x[1]))
     if threshold is not None:
+        before = len(ranked)
         ranked = [(d, s) for d, s in ranked if float(s) >= threshold]
+        if len(ranked) < before:
+            logger.debug(
+                "精排阈值 %.3f 过滤掉 %d/%d 条候选", threshold, before - len(ranked), before
+            )
+        if not ranked:
+            logger.info("精排后无候选达到阈值 %.3f，判定为「知识库无相关内容」", threshold)
     return [d for d, _ in ranked[:top_n]]

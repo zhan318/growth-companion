@@ -508,9 +508,13 @@ def retrieve_obsidian(question: str, k: int | None = None):
     candidates = fuse_documents(dense_docs, bm25_docs, top_n=recall_n)
 
     # 精排：把候选交给 Cross-Encoder 重排（失败自动降级为原顺序）
+    # threshold 用于判定「知识库无相关内容」：低于阈值的候选被丢弃，
+    # merged 为空时上层会返回「未找到相关内容」，而不是硬塞 3 条不相关资料给 LLM。
     if config.RERANK_ENABLED:
         from .reranker import rerank
-        merged = rerank(question, candidates, top_n=top_k)
+        merged = rerank(
+            question, candidates, top_n=top_k, threshold=config.RERANK_THRESHOLD
+        )
     else:
         merged = candidates[:top_k]
 
