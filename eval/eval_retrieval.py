@@ -79,7 +79,7 @@ def main():
     topk_hit = sum(r["topk_hit"] for r in valid)
     # BM25 额外救回：dense 漏检、融合后命中（说明稀疏检索补上了召回）
     bm25_extra = sum(1 for r in valid if r["merged_hit"] and not r["dense_hit"])
-    nin_found = sum(1 for r in nin if r["merged_hit"])     # 越界检出 = 可能诱发幻觉
+    nin_found = sum(1 for r in nin if r["n_merged"] > 0)   # 越界检出 = 有返回即可能诱发幻觉
 
     print(f"\n===== 汇总（有效样本 {nv} 条，不含 not_in_kb {len(nin)} 条）=====")
     print(f"dense 语义检索命中率:  {dense_hit}/{nv} = {dense_hit/nv:.1%}")
