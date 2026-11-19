@@ -9,9 +9,18 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from utils.logger import get_logger
 
 from .config import config
-from .embeddings import get_embedding
+from .embeddings import get_embedding, get_embedding_model_id
 
 logger = get_logger(__name__)
+
+# ── collection 指纹（BUG-4）──
+# 向量本身不携带「由哪个模型生成」的信息。换了 embedding 模型（或维度变了）
+# 却没重建索引时，检索会静默返回一堆毫不相关的结果，接口照常 200，极难定位。
+# 因此在 collection metadata 里记录「模型标识 + 维度」，每次打开时校验。
+FINGERPRINT_VERSION = "1"
+_META_MODEL = "embedding_model"
+_META_DIM = "embedding_dimension"
+_META_VER = "fingerprint_version"
 
 
 class VectorStore:
@@ -29,7 +38,93 @@ class VectorStore:
             persist_directory=str(persist_dir),
         )
         self._retriever: VectorStoreRetriever | None = None
+        self._ensure_embedding_fingerprint()
         logger.info("向量库[%s]初始化完成, 文档数=%d", self.collection_name, self._store._collection.count())
+
+    # ── 指纹校验 ──
+
+    def _ensure_embedding_fingerprint(self) -> None:
+        """校验 collection 的 embedding 指纹；老库无指纹时探测维度并回填。
+
+        三种情况：
+        1. 已有指纹且与当前配置一致 → 放行；
+        2. 已有指纹但不一致 → 直接抛 ValueError（必须重建索引）；
+        3. 无指纹（历史库）→ 读一条已存向量比维度，一致则回填，不一致则抛错。
+           只比维度是粗校验：同维度的不同模型识别不出来，但能拦住绝大多数事故
+           （换模型换维度、误用英文模型 384 维等）。
+        """
+        col = self._store._collection
+        meta = dict(col.metadata or {})
+        model_id = get_embedding_model_id()
+        dim = self._current_embedding_dimension()
+
+        stored_model = meta.get(_META_MODEL)
+        stored_dim = meta.get(_META_DIM)
+
+        if stored_model is not None and stored_dim is not None:
+            if str(stored_model) != model_id or int(stored_dim) != dim:
+                raise ValueError(
+                    f"向量库[{self.collection_name}]的 embedding 指纹与当前配置不一致："
+                    f"索引由 {stored_model}({stored_dim}维) 生成，"
+                    f"当前配置是 {model_id}({dim}维)。"
+                    "换 embedding 模型后旧向量在新语义空间里无效，必须重建该 collection。"
+                )
+            return
+
+        if self.count() == 0:
+            # 空库：先写指纹，之后写入的向量必然来自当前模型
+            self._write_fingerprint(meta, model_id, dim)
+            return
+
+        stored_probe = self._probe_stored_dimension()
+        if stored_probe is None:
+            logger.warning(
+                "向量库[%s]无法探测已存向量维度，跳过指纹校验（检索仍可用）",
+                self.collection_name,
+            )
+            return
+        if stored_probe != dim:
+            raise ValueError(
+                f"向量库[{self.collection_name}]已存向量是 {stored_probe} 维，"
+                f"当前 embedding 配置是 {model_id}({dim}维)，二者不兼容。"
+                "请重建该 collection 后再使用（换模型必须重新索引）。"
+            )
+        self._write_fingerprint(meta, model_id, dim)
+        logger.info(
+            "向量库[%s]回填 embedding 指纹: %s(%d维)", self.collection_name, model_id, dim
+        )
+
+    def _current_embedding_dimension(self) -> int:
+        """当前 embedding 的维度（优先读模型属性，避免多余编码）"""
+        emb = self._store.embeddings
+        dim = getattr(emb, "dimension", None)
+        if dim is None:
+            dim = len(emb.embed_query("dimension probe"))
+        return int(dim)
+
+    def _probe_stored_dimension(self) -> int | None:
+        """读取库中第一条已存向量的维度；失败或空库返回 None"""
+        try:
+            res = self._store._collection.get(limit=1, include=["embeddings"])
+        except Exception as e:
+            logger.warning("探测向量维度失败: %s", e)
+            return None
+        embs = res.get("embeddings")
+        if embs is None or len(embs) == 0:
+            return None
+        return int(len(embs[0]))
+
+    def _write_fingerprint(self, base_meta: dict, model_id: str, dim: int) -> None:
+        """把指纹合并进 collection metadata（保留原有键，如 hnsw:space）"""
+        new_meta = dict(base_meta)
+        new_meta[_META_MODEL] = model_id
+        new_meta[_META_DIM] = dim
+        new_meta[_META_VER] = FINGERPRINT_VERSION
+        try:
+            self._store._collection.modify(metadata=new_meta)
+        except Exception as e:
+            # 写不上指纹不影响检索，只是下次启动会重新探测
+            logger.warning("写入 embedding 指纹失败（不影响检索）: %s", e)
 
     # ── 写入 ──
 
@@ -96,6 +191,8 @@ class VectorStore:
             embedding_function=embedding,
             persist_directory=str(Path(config.VECTOR_DB_DIR)),
         )
+        # 新 collection 是空的，重新写入指纹
+        self._ensure_embedding_fingerprint()
         logger.info("向量库[%s]已清空并重建", self.collection_name)
 
 
