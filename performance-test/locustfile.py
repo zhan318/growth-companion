@@ -1,4 +1,4 @@
-"""成长智伴 - 工作台性能压测 locustfile
+"""后端面经 RAG Agent - 工作台性能压测 locustfile
 
 场景（通过 --tags 选择）：
 - single      单工具基线 + 多工具并行（5:1 权重混合）

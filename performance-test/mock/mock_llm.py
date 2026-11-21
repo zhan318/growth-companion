@@ -68,7 +68,7 @@ def _route(message: str) -> list[dict]:
 def _mock_answer(message: str) -> str:
     """直接回答（不调用工具）时的 mock 回复。"""
     if any(k in message for k in ["你好", "hi", "hello", "嗨"]):
-        return "你好！我是成长智伴，有什么可以帮你的？"
+        return "你好！我是后端面经 RAG Agent，有什么可以帮你的？"
     return (
         "这是 mock LLM 的回复。你的问题：「" + message + "」\n"
         "（当前处于性能测试模式，LLM 由本地 mock 服务替代。）"
