@@ -849,7 +849,7 @@ function App() {
         onKeyDown={handleKeyDown}
         placeholder={
           chatMode === 'knowledge' ? "向你的 Obsidian 笔记库提问…"
-          : "给成长智伴发条消息..."
+          : "给后端面经 RAG Agent发条消息..."
         }
         rows={3}
         className={`w-full resize-none bg-transparent border-0 px-1 py-1 text-[15px] outline-none max-h-48 ${isDark ? "text-gray-100 placeholder-gray-500" : "text-gray-800 placeholder-gray-400"}`}
@@ -918,7 +918,7 @@ function App() {
         <div className="w-full max-w-sm mx-4">
           <div className="text-center mb-8">
             <p className="text-5xl mb-3">🧠</p>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">成长智伴</h1>
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">后端面经 RAG Agent</h1>
             <p className="text-sm text-gray-400 mt-1">连接你的 Obsidian 笔记库</p>
           </div>
 
@@ -1037,7 +1037,7 @@ function App() {
 
         {/* 顶部工具条 */}
         <header className="relative z-10 shrink-0 flex items-center justify-between px-6 py-4">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">成长智伴</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">后端面经 RAG Agent</span>
           <div className="flex items-center gap-3 text-xs">
             <span className="text-gray-500 dark:text-gray-400">{username}</span>
             <button onClick={() => { setPage('profile'); setTimeout(fetchProfile, 50) }}
@@ -1561,7 +1561,7 @@ function App() {
               title={showSidebar ? '隐藏侧边栏' : '显示侧边栏'}
             >{showSidebar ? '⟨' : '⟩'}</Button>
             <span className={`text-base font-semibold whitespace-nowrap ${isDark ? "text-gray-100" : "text-gray-800"}`}>
-              成长智伴
+              后端面经 RAG Agent
             </span>
             {/* 当前模式 chip（点击下钻中央 welcome 重选） */}
             <button

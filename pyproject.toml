@@ -1,7 +1,7 @@
 [project]
 name = "growth-companion"
 version = "1.0.0"
-description = "成长智伴 — 基于 LLM + RAG 的个人成长智能体"
+description = "后端面经 RAG Agent — 基于 FastAPI + RAG + Function Calling 的个人知识库问答与模拟面试系统"
 requires-python = ">=3.11"
 
 [tool.ruff]

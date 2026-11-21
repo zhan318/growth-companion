@@ -64,7 +64,7 @@ def error_response(status_code: int, code: str, message: str, detail: str = "") 
 
 
 app = FastAPI(
-    title="成长智伴 API",
+    title="后端面经 RAG Agent API",
     description="基于 DeepSeek + RAG 的智能 Agent 服务",
     version="1.0.0"
 )
@@ -854,7 +854,7 @@ async def root():
     from knowledge.pipeline import get_vault_metadata
     meta = get_vault_metadata()
     base = {
-        "message": "成长智伴 服务运行中",
+        "message": "后端面经 RAG Agent 服务运行中",
         "docs": "/docs",
         "status": "active",
     }

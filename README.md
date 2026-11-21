@@ -1,6 +1,6 @@
-# 🧠 成长智伴 · Python + DeepSeek + React
+# 🧠 后端面经 RAG Agent · Python + DeepSeek + React
 
-> 一个以 **个人 Obsidian 笔记库**为核心知识源的成长智能体。基于 **FastAPI + DeepSeek**（兼容多家 OpenAI 格式模型）构建，具备用户认证、长期记忆、多会话隔离、RAG 知识库检索、自主工具调用（Function Calling）与流式输出，并附带 **React 前端**。在此基础上提供 **模拟面试 / MBTI 测试 / 数据看板** 三个成长向业务模块。
+> 一个以 **个人 Obsidian 笔记库**为核心知识源的 RAG 智能体。基于 **FastAPI + DeepSeek**（兼容多家 OpenAI 格式模型）构建，具备用户认证、长期记忆、多会话隔离、RAG 知识库检索、自主工具调用（Function Calling）与流式输出，并附带 **React 前端**。在此基础上提供 **模拟面试 / MBTI 测试 / 数据看板** 三个成长向业务模块。
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
@@ -56,7 +56,7 @@
 ## 🗂️ 项目结构
 
 ```
-成长智伴/
+后端面经 RAG Agent/
 ├── api.py                      # FastAPI 服务入口（30+ 路由：认证/聊天/知识库/MBTI/面试/笔记/看板）
 ├── app.py                      # 终端交互入口（CLI）
 ├── config.py                   # 全局配置：环境变量 + LLM 厂商 + Obsidian + GitHub OAuth
